@@ -1,0 +1,9 @@
+name: dibs
+channels:
+- defaults
+dependencies:
+- conda=4.9.2
+- python=3.8.3
+- pip
+- pip:
+  - -r ./requirements.txt
