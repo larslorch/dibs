@@ -1,0 +1,452 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>cdt.utils.R &mdash; Causal Discovery Toolbox 0.5.22 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../_static/favicon.png"/>
+  
+  
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/language_data.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <script type="text/x-mathjax-config">MathJax.Hub.Config({"extensions": ["tex2jax.js"], "jax": ["input/TeX", "output/HTML-CSS"], "tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "processEscapes": true}, "HTML-CSS": {"fonts": ["TeX"]}})</script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html">
+          
+
+          
+            
+            <img src="../../../_static/banner.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.5.22
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../index.html">Causal Discovery Toolbox Documentation</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Get started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../causality.html">cdt.causality</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../independence.html">cdt.independence</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data.html">cdt.data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../utils.html">cdt.utils</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">cdt.metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../settings.html">Toolbox Settings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../models.html">PyTorch Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../developer.html">Developer Documentation</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">Causal Discovery Toolbox</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>cdt.utils.R</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for cdt.utils.R</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Loading and executing functions from R packages.</span>
+
+<span class="sd">This module defines the interface between R and Python using subprocess.</span>
+<span class="sd">At the initialization, the toolbox checks if R is available and sets</span>
+<span class="sd">``cdt.SETTINGS.r_is_available`` to ``True`` if the R framework is detected.</span>
+<span class="sd">Else, this module is deactivated.</span>
+
+<span class="sd">Next, each time an R function is called, the availability of the R package is</span>
+<span class="sd">tested using the ``DefaultRPackages.check_R_package`` function. The number of</span>
+<span class="sd">available packages is limited and the list is defined in ``DefaultRPackages``.</span>
+
+<span class="sd">If the package is available, the ``launch_R_script`` proceeds to the execution</span>
+<span class="sd">of the function, by:</span>
+
+<span class="sd">1. Copying the R script template and modifying it with the given arguments</span>
+<span class="sd">2. Copying all the data to a temporary folder</span>
+<span class="sd">3. Launching a R subprocess using the modified template and the data, and</span>
+<span class="sd">   the script saves the results in the temporary folder</span>
+<span class="sd">4. Retrieving all the results in the Python process and cleaning up all the</span>
+<span class="sd">   temporary files.</span>
+
+<span class="sd">.. note::</span>
+<span class="sd">   For custom R configurations/path, a placeholder for the Rscript executable</span>
+<span class="sd">   path is available at ``cdt.SETTINGS.rpath``. It should be overriden with</span>
+<span class="sd">   the full path as a string.</span>
+
+<span class="sd">.. MIT License</span>
+<span class="sd">..</span>
+<span class="sd">.. Copyright (c) 2018 Diviyan Kalainathan</span>
+<span class="sd">..</span>
+<span class="sd">.. Permission is hereby granted, free of charge, to any person obtaining a copy</span>
+<span class="sd">.. of this software and associated documentation files (the &quot;Software&quot;), to deal</span>
+<span class="sd">.. in the Software without restriction, including without limitation the rights</span>
+<span class="sd">.. to use, copy, modify, merge, publish, distribute, sublicense, and/or sell</span>
+<span class="sd">.. copies of the Software, and to permit persons to whom the Software is</span>
+<span class="sd">.. furnished to do so, subject to the following conditions:</span>
+<span class="sd">..</span>
+<span class="sd">.. The above copyright notice and this permission notice shall be included in all</span>
+<span class="sd">.. copies or substantial portions of the Software.</span>
+<span class="sd">..</span>
+<span class="sd">.. THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR</span>
+<span class="sd">.. IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,</span>
+<span class="sd">.. FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE</span>
+<span class="sd">.. AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER</span>
+<span class="sd">.. LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,</span>
+<span class="sd">.. OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE</span>
+<span class="sd">.. SOFTWARE.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">from</span> <span class="nn">shutil</span> <span class="kn">import</span> <span class="n">copy</span><span class="p">,</span> <span class="n">rmtree</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span> <span class="nn">tempfile</span> <span class="kn">import</span> <span class="n">gettempdir</span>
+<span class="kn">import</span> <span class="nn">cdt.utils.Settings</span>
+
+
+<span class="k">def</span> <span class="nf">message_warning</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="o">*</span><span class="n">a</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Ignore everything except the message.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
+
+
+<span class="n">warnings</span><span class="o">.</span><span class="n">formatwarning</span> <span class="o">=</span> <span class="n">message_warning</span>
+<span class="n">init</span> <span class="o">=</span> <span class="kc">True</span>
+
+
+<div class="viewcode-block" id="DefaultRPackages"><a class="viewcode-back" href="../../../utils.html#cdt.utils.R.DefaultRPackages">[docs]</a><span class="k">class</span> <span class="nc">DefaultRPackages</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Define the R packages that can be imported and checks their availability.</span>
+
+<span class="sd">    The attributes define all the R packages that can be imported. Their value</span>
+<span class="sd">    is initialized to ``None`` ; and as their are called, their availability</span>
+<span class="sd">    will be checked and their value will be set to either `True` or `False`</span>
+<span class="sd">    depending on the results. A package already tested (which value is not</span>
+<span class="sd">    `None`) will not be tested again.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        pcalg (bool): Availability of the `pcalg` R package</span>
+<span class="sd">        kpcalg (bool): Availability of the `kpcalg` R package</span>
+<span class="sd">        bnlearn (bool): Availability of the `bnlearn` R package</span>
+<span class="sd">        D2C (bool): Availability of the `D2C` R package</span>
+<span class="sd">        SID (bool): Availability of the `SID` R package</span>
+<span class="sd">        CAM (bool): Availability of the `CAM` R package</span>
+<span class="sd">        RCIT (bool): Availability of the `RCIT` R package</span>
+
+<span class="sd">    .. warning ::</span>
+<span class="sd">       The RCIT package is not the original one (github.com/ericstrobl/RCIT)</span>
+<span class="sd">       but an adaptation made to fit in the PC algorithm, available at:</span>
+<span class="sd">       https://github.com/Diviyan-Kalainathan/RCIT</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;init&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;pcalg&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;kpcalg&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;bnlearn&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;sparsebn&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;D2C&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;SID&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;CAM&quot;</span><span class="p">,</span>
+                 <span class="s2">&quot;RCIT&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Init the values of the packages.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Representation.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">([</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__slots__</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;For print purposes.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">([</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__slots__</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pcalg</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kpcalg</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bnlearn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sparsebn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">D2C</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">SID</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">CAM</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">RCIT</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test if libraries are available on the fly.&quot;&quot;&quot;</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;init&#39;</span><span class="p">):</span>
+            <span class="n">availability</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_R_package</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">availability</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">availability</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+<div class="viewcode-block" id="DefaultRPackages.check_R_package"><a class="viewcode-back" href="../../../utils.html#cdt.utils.R.DefaultRPackages.check_R_package">[docs]</a>    <span class="k">def</span> <span class="nf">check_R_package</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Execute a subprocess to check the package&#39;s availability.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            package (str): Name of the package to be tested.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: `True` if the package is available, `False` otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">test_package</span> <span class="o">=</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">launch_R_script</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">/R_templates/test_import.R&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)))),</span>
+                                                     <span class="p">{</span><span class="s2">&quot;</span><span class="si">{package}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">package</span><span class="p">},</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">test_package</span></div></div>
+
+
+<div class="viewcode-block" id="launch_R_script"><a class="viewcode-back" href="../../../utils.html#cdt.utils.R.launch_R_script">[docs]</a><span class="k">def</span> <span class="nf">launch_R_script</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">arguments</span><span class="p">,</span> <span class="n">output_function</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Launch an R script, starting from a template and replacing text in file</span>
+<span class="sd">    before execution.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        template (str): path to the template of the R script</span>
+<span class="sd">        arguments (dict): Arguments that modify the template&#39;s placeholders</span>
+<span class="sd">            with arguments</span>
+<span class="sd">        output_function (function): Function to execute **after** the execution</span>
+<span class="sd">            of the R script, and its output is returned by this function. Used</span>
+<span class="sd">            traditionally as a function to retrieve the results of the</span>
+<span class="sd">            execution.</span>
+<span class="sd">        verbose (bool): Sets the verbosity of the R subprocess.</span>
+<span class="sd">        debug (bool): If True, the generated scripts are not deleted.</span>
+
+<span class="sd">    Return:</span>
+<span class="sd">        Returns the output of the ``output_function`` if not `None`</span>
+<span class="sd">        else `True` or `False` depending on whether the execution was</span>
+<span class="sd">        successful.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">base_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{0!s}</span><span class="s1">/cdt_R_script_</span><span class="si">{1!s}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">gettempdir</span><span class="p">(),</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">base_dir</span><span class="p">)</span>
+    <span class="n">rpath</span> <span class="o">=</span> <span class="n">cdt</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">Settings</span><span class="o">.</span><span class="n">SETTINGS</span><span class="o">.</span><span class="n">get_default</span><span class="p">(</span><span class="n">rpath</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">scriptpath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{}</span><span class="s1">/instance_</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">base_dir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">template</span><span class="p">)))</span>
+    <span class="n">copy</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">template</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">scriptpath</span><span class="p">))</span>
+
+    <span class="c1"># Converting Paths to OS-compliant paths</span>
+    <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">arguments</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arguments</span><span class="p">[</span><span class="n">arg</span><span class="p">],</span> <span class="p">(</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
+            <span class="n">arguments</span><span class="p">[</span><span class="n">arg</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">arguments</span><span class="p">[</span><span class="n">arg</span><span class="p">])</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\\</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\\\\</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">FileInput</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">scriptpath</span><span class="p">),</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">file</span><span class="p">:</span>
+            <span class="n">mline</span> <span class="o">=</span> <span class="n">line</span>
+            <span class="k">for</span> <span class="n">elt</span> <span class="ow">in</span> <span class="n">arguments</span><span class="p">:</span>
+                <span class="n">mline</span> <span class="o">=</span> <span class="n">mline</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">elt</span><span class="p">,</span> <span class="n">arguments</span><span class="p">[</span><span class="n">elt</span><span class="p">])</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">mline</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">output_function</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">call</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">rpath</span><span class="p">),</span> <span class="s2">&quot;--vanilla&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">scriptpath</span><span class="p">)],</span>
+                                    <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span>
+                                    <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;R Call errored, is R available ?&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">e</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="n">process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">rpath</span><span class="p">),</span> <span class="s2">&quot;--vanilla&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">scriptpath</span><span class="p">)])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">rpath</span><span class="p">),</span> <span class="s2">&quot;--vanilla&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">scriptpath</span><span class="p">)],</span>
+                                           <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">)</span>
+            <span class="n">process</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
+                <span class="n">rmtree</span><span class="p">(</span><span class="n">base_dir</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">KeyboardInterrupt</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="n">output_function</span><span class="p">()</span>
+        <span class="c1"># Cleaning up</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
+                <span class="n">rmtree</span><span class="p">(</span><span class="n">base_dir</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">communicate</span><span class="p">()</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">R Python Error Output </span><span class="se">\n</span><span class="s2">-----------------------</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;RProcessError </span><span class="se">\n</span><span class="s2">R Process Error Output </span><span class="se">\n</span><span class="s2">-----------------------</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="s2">&quot;ISO-8859-1&quot;</span><span class="p">))</span> <span class="kn">from</span> <span class="bp">None</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">R Python Error Output </span><span class="se">\n</span><span class="s2">-----------------------</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;RProcessError &quot;</span><span class="p">)</span> <span class="kn">from</span> <span class="bp">None</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
+        <span class="n">rmtree</span><span class="p">(</span><span class="n">base_dir</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">output</span></div>
+
+
+<span class="n">RPackages</span> <span class="o">=</span> <span class="n">DefaultRPackages</span><span class="p">()</span>
+<span class="n">init</span> <span class="o">=</span> <span class="kc">False</span>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        
+        &copy; Copyright 2018, Diviyan Kalainathan, Olivier Goudet
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
