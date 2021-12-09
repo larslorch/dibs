@@ -1,77 +1,38 @@
-import os
-import pickle
-from collections import namedtuple
-
 import jax.numpy as jnp
 from jax import random
 
-from dibs.graph.graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection
-from dibs.utils.graph import graph_to_mat, adjmat_to_str
+from dibs.graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection
+from dibs.utils.graph import graph_to_mat
 
-from dibs.models.linearGaussian import LinearGaussian, LinearGaussianJAX
-from dibs.models.linearGaussianEquivalent import BGe, BGeJAX
-from dibs.models.nonlinearGaussian import DenseNonlinearGaussianJAX
+from dibs.models import LinearGaussian, BGe, DenseNonlinearGaussian
 
-STORE_ROOT = ['store'] 
+from typing import Any, NamedTuple
 
 
-Target = namedtuple('Target', (
-    'passed_key',               # jax.random key passed _into_ the function generating this object
-    'graph_model',
-    'generative_model',
-    'inference_model',
-    'n_vars',
-    'n_observations',
-    'n_ho_observations',
-    'g',                        # [n_vars, n_vars]
-    'theta',                    # PyTree
-    'x',                        # [n_observation, n_vars]    data
-    'x_ho',                     # [n_ho_observation, n_vars] held-out data
-    'x_interv',                 # list of (interv dict, held-out interventional data) 
-))
+class Data(NamedTuple):
 
+    passed_key: Any  # jax.random key passed _into_ the function generating this object
 
-def save_pickle(obj, relpath):
-    """Saves `obj` to `path` using pickle"""
-    save_path = os.path.abspath(os.path.join(
-        '..', *STORE_ROOT, relpath + '.pk'
-    ))
-    with open(save_path, 'wb') as fp:
-        pickle.dump(obj, fp)
+    n_vars: int
+    n_observations: int
+    n_ho_observations: int
 
-def load_pickle(relpath):
-    """Loads object from `path` using pickle"""
-    load_path = os.path.abspath(os.path.join(
-        '..', *STORE_ROOT, relpath + '.pk'
-    ))
-    with open(load_path, 'rb') as fp:
-        obj = pickle.load(fp)
-    return obj
-
-def options_to_str(**options):
-    return '-'.join(['{}={}'.format(k, v) for k, v in options.items()])
-
-
-def hparam_dict_to_str(d):
-    """
-    Converts hyperparameter dictionary into human-readable string
-    """
-    strg = '_'.join([k + '=' + str(v) for k, v, in d.items()
-                     if type(v) in [bool, int, float, str, dict]])
-    return strg
+    g: Any          # [n_vars, n_vars]
+    theta: Any      # PyTree
+    x: Any          # [n_observations, n_vars]
+    x_ho :Any       # [n_ho_observations, n_vars]
+    x_interv: Any   # list of (interv dict, [n_ho_observations, n_vars])
 
 
 def make_synthetic_bayes_net(*,
     key,
     n_vars,
-    graph_model,
+    graph_dist,
     generative_model,
-    inference_model,
     n_observations=100,
     n_ho_observations=100,
     n_intervention_sets=10,
     perc_intervened=0.1,
-    verbose=False,
 ):
     """
     Returns an instance of `Target` for evaluation of a method against 
@@ -79,10 +40,9 @@ def make_synthetic_bayes_net(*,
 
     Args:
         key: rng key
-        c (int): seed
-        graph_model (GraphDistribution): graph model object 
-        generative_model (BasicModel): BN model object for generating the observations
-        inference_model (BasicModel): JAX-BN model object for inference
+        n_vars (int): number of variables
+        graph_dist (GraphDistribution): graph model object
+        generative_model : BN model object for generating the observations
         n_observations (int): number of observations generated for posterior inference
         n_ho_observations (int): number of held-out observations generated for validation
         n_intervention_sets (int): number of different interventions considered overall
@@ -99,11 +59,11 @@ def make_synthetic_bayes_net(*,
 
     # generate ground truth observations
     key, subk = random.split(key)
-    g_gt = graph_model.sample_G(subk)
+    g_gt = graph_dist.sample_G(subk)
     g_gt_mat = jnp.array(graph_to_mat(g_gt))
 
     key, subk = random.split(key)
-    theta = generative_model.sample_parameters(key=subk, g=g_gt)
+    theta = generative_model.sample_parameters(key=subk, n_vars=n_vars)
 
     key, subk = random.split(key)
     x = generative_model.sample_obs(key=subk, n_samples=n_observations, g=g_gt, theta=theta)
@@ -127,15 +87,9 @@ def make_synthetic_bayes_net(*,
         x_interv_ = generative_model.sample_obs(key=subk, n_samples=n_observations, g=g_gt, theta=theta, interv=interv)
         x_interv.append((interv, x_interv_))
 
-    if verbose:
-        print(f'Sampled BN with {jnp.sum(g_gt_mat).item()}-edge DAG :\t {adjmat_to_str(g_gt_mat)}')
-
     # return and save generated target object
-    obj = Target(
+    data = Data(
         passed_key=passed_key,
-        graph_model=graph_model,
-        generative_model=generative_model,
-        inference_model=inference_model,
         n_vars=n_vars,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations,
@@ -145,7 +99,7 @@ def make_synthetic_bayes_net(*,
         x_ho=x_ho,
         x_interv=x_interv,
     )
-    return obj
+    return data
     
 
 def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
@@ -153,28 +107,29 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
     Instantiates graph model
 
     Args:
-        n_vars: number of variables
-        graph_prior_str: specifier (`er`, `sf`)
+        n_vars (int): number of variables in BN
+        graph_prior_str: specifier for random graph model; choices: `er`, `sf`
+        edges_per_node: number of edges per node (in expectation when applicable)
 
     Returns:
         `GraphDistribution`
     """
     if graph_prior_str == 'er':
-        graph_model = ErdosReniDAGDistribution(
+        graph_dist = ErdosReniDAGDistribution(
             n_vars=n_vars, 
             n_edges=edges_per_node * n_vars)
 
     elif graph_prior_str == 'sf':
-        graph_model = ScaleFreeDAGDistribution(
+        graph_dist = ScaleFreeDAGDistribution(
             n_vars=n_vars,
             n_edges_per_node=edges_per_node)
 
     else:
-        assert n_vars <= 5 
-        graph_model = UniformDAGDistributionRejection(
+        assert n_vars <= 5, "Naive uniform DAG sampling only possible up to 5 nodes"
+        graph_dist = UniformDAGDistributionRejection(
             n_vars=n_vars)
 
-    return graph_model
+    return graph_dist
 
 
 def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -190,7 +145,9 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     
     Args:
         key: rng key
-        n_vars (int): number variables in BN
+        n_vars (int): number of variables in BN
+        n_observations (int): number of iid observations of variables in BN
+        n_ho_observations (int): number of iid held-out observations of variables in BN
         graph_prior_str (str): graph prior (`er` or `sf`)
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
@@ -201,27 +158,26 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     """
 
     # init models
-    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
         obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge, g_dist=graph_model)
+        sig_edge=sig_edge, graph_dist=graph_dist)
 
-    inference_model = BGeJAX(
-        mean_obs=jnp.zeros(n_vars), 
+    inference_model = BGe(
+        graph_dist=graph_dist, mean_obs=jnp.zeros(n_vars),
         alpha_mu=1.0, alpha_lambd=n_vars + 2)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
-    target = make_synthetic_bayes_net(
+    data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_model=graph_model,
+        graph_dist=graph_dist,
         generative_model=generative_model,
-        inference_model=inference_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return target
+    return data, inference_model
 
 
 def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -232,7 +188,9 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
 
     Args:
         key: rng key
-        n_vars (int): number variables in BN
+        n_vars (int): number of variables in BN
+        n_observations (int): number of iid observations of variables in BN
+        n_ho_observations (int): number of iid held-out observations of variables in BN
         graph_prior_str (str): graph prior (`er` or `sf`)
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
@@ -243,27 +201,26 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     """
 
     # init models
-    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
         obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge, g_dist=graph_model)
+        sig_edge=sig_edge, graph_dist=graph_dist)
 
-    inference_model = LinearGaussianJAX(
+    inference_model = LinearGaussian(
         obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge)
+        sig_edge=sig_edge, graph_dist=graph_dist)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
-    target = make_synthetic_bayes_net(
+    data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_model=graph_model,
+        graph_dist=graph_dist,
         generative_model=generative_model,
-        inference_model=inference_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return target
+    return data, inference_model
 
 
 def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -276,7 +233,9 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
 
     Args:
         key: rng key
-        n_vars (int): number variables in BN
+        n_vars (int): number of variables in BN
+        n_observations (int): number of iid observations of variables in BN
+        n_ho_observations (int): number of iid held-out observations of variables in BN
         graph_prior_str (str): graph prior (`er` or `sf`)
         obs_noise (float): observation noise
         sig_param (float): stddev of the BN parameters,
@@ -289,24 +248,23 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     """
 
     # init models
-    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
-    generative_model = DenseNonlinearGaussianJAX(
+    generative_model = DenseNonlinearGaussian(
         obs_noise=obs_noise, sig_param=sig_param,
-        hidden_layers=hidden_layers, g_dist=graph_model)
+        hidden_layers=hidden_layers, graph_dist=graph_dist)
 
-    inference_model = DenseNonlinearGaussianJAX(
+    inference_model = DenseNonlinearGaussian(
         obs_noise=obs_noise, sig_param=sig_param,
-        hidden_layers=hidden_layers, g_dist=graph_model)
+        hidden_layers=hidden_layers, graph_dist=graph_dist)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
-    target = make_synthetic_bayes_net(
+    data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_model=graph_model,
+        graph_dist=graph_dist,
         generative_model=generative_model,
-        inference_model=inference_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return target
+    return data, inference_model

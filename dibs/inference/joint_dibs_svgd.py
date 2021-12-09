@@ -1,14 +1,16 @@
 import functools
-import math
 
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, random, grad
 from jax.experimental import optimizers
 from jax.tree_util import tree_map, tree_multimap
+from jax.scipy.special import logsumexp
 
 from dibs.inference.dibs import DiBS
+from dibs.kernel import JointAdditiveFrobeniusSEKernel
 
+from dibs.eval import ParticleDistribution
 from dibs.utils.func import expand_by
 
 
@@ -24,27 +26,45 @@ class JointDiBS(DiBS):
     For marginal inference of p(G | D), use the class `MarginalDiBS`
 
     Args:
-        kernel:  object satisfying `BasicKernel` signature with differentiable evaluation function `eval()`
-        target_log_prior: log p(G); differentiable log prior probability using the probabilities of edges (as implied by Z)
-        target_log_joint_prob: log p(theta, D | G); differentiable or non-differentiable discrete log probability of target distribution
+        x: observations of shape [n_observations, n_vars]
+        inference_model: Bayes net inference model defining prior and likelihood underlying the inferred posterior
+
+        kernel: class of kernel with differentiable evaluation function `eval`
+        kernel_param: kwargs to instantiate `kernel`
+        optimizer: optimizer identifier str
+        optimizer_param: kwargs to instantiate `optimizer`
+
         alpha_linear (float): inverse temperature parameter schedule of sigmoid
-        beta_linear (float): inverse temperature parameter schedule of prior
-        optimizer (dict): dictionary with at least keys `name` and `stepsize`
-        n_grad_mc_samples (int): MC samples in gradient estimator for likelihood term p(theta, D | G)
-        n_acyclicity_mc_samples (int): MC samples in gradient estimator for acyclicity constraint
+        beta_linear (float): inverse temperature parameter schedule of acyclicity prior
+        tau (float): Gumbel-softmax relaxation temperature
+
+        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator for likelihood term p(theta, D | G)
+        n_acyclicity_mc_samples (int): number of Monte Carlo samples in gradient estimator of acyclicity prior
         grad_estimator_z (str): gradient estimator d/dZ of expectation; choices: `score` or `reparam`
-        score_function_baseline (float): weight of addition in score function baseline; == 0.0 corresponds to not using a baseline
+        score_function_baseline (float): weight of addition in score function estimator baseline
         latent_prior_std (float): standard deviation of Gaussian prior over Z; defaults to 1/sqrt(k)
 
     """
 
-    def __init__(self, *, kernel, target_log_prior, target_log_joint_prob, alpha_linear, beta_linear=1.0, tau=1.0,
-                 optimizer=dict(name='rmsprop', stepsize=0.005), n_grad_mc_samples=128, n_acyclicity_mc_samples=32, 
-                 grad_estimator_z='reparam', score_function_baseline=0.0,
+    def __init__(self, *, x, inference_model,
+                 kernel=JointAdditiveFrobeniusSEKernel, kernel_param=None,
+                 optimizer="rmsprop", optimizer_param=None,
+                 alpha_linear=0.05, beta_linear=1.0, tau=1.0,
+                 n_grad_mc_samples=128, n_acyclicity_mc_samples=32,
+                 grad_estimator_z="reparam", score_function_baseline=0.0,
                  latent_prior_std=None, verbose=False):
+
+        # handle mutable default args
+        if kernel_param is None:
+            kernel_param = {"h_latent": 5.0, "h_theta": 500.0}
+        if optimizer_param is None:
+            optimizer_param = {"stepsize": 0.005}
+
+        # init DiBS superclass methods
         super(JointDiBS, self).__init__(
-            target_log_prior=target_log_prior,
-            target_log_joint_prob=target_log_joint_prob,
+            x=x,
+            log_graph_prior=inference_model.log_graph_prior,
+            log_joint_prob=inference_model.observational_log_joint_prob,
             alpha_linear=alpha_linear,
             beta_linear=beta_linear,
             tau=tau,
@@ -56,19 +76,27 @@ class JointDiBS(DiBS):
             verbose=verbose,
         )
 
-        self.kernel = kernel
-        self.optimizer = optimizer
+        self.inference_model = inference_model
+        self.eltwise_log_likelihood = vmap(lambda g, theta, x_ho:
+            inference_model.observational_log_joint_prob(g, theta, x_ho, None), (0, 0, None), 0)
+
+        self.kernel = kernel(**kernel_param)
+
+        if optimizer == 'gd':
+            self.opt = optimizers.sgd(optimizer_param['stepsize'])
+        elif optimizer == 'rmsprop':
+            self.opt = optimizers.rmsprop(optimizer_param['stepsize'])
+        else:
+            raise ValueError()
        
 
-    def sample_initial_random_particles(self, *, key, n_particles, n_vars, model, n_dim=None):
+    def sample_initial_random_particles(self, *, key, n_particles, n_dim=None):
         """
         Samples random particles to initialize SVGD
 
         Args:
             key: rng key
-            n_particles: number of particles for SVGD
-            n_particles: number of variables `d` in inferred BN 
-            model: model of type `BasicModel` to sample prior parameter PyTree
+            n_particles: number of particles inferred
             n_dim: size of latent dimension `k`. Defaults to `n_vars`, s.t. k == d
 
         Returns:
@@ -78,22 +106,22 @@ class JointDiBS(DiBS):
         """
         # default full rank
         if n_dim is None:
-            n_dim = n_vars 
+            n_dim = self.n_vars
         
         # std like Gaussian prior over Z           
         std = self.latent_prior_std  or (1.0 / jnp.sqrt(n_dim))
 
-        # sample
+        # sample from parameter prior
         key, subk = random.split(key)
-        z = random.normal(subk, shape=(n_particles, n_vars, n_dim, 2)) * std
+        z = random.normal(subk, shape=(n_particles, self.n_vars, n_dim, 2)) * std
 
         key, subk = random.split(key)
-        theta = model.init_parameters(key=subk, n_particles=n_particles, n_vars=n_vars)
+        theta = self.inference_model.sample_parameters(key=subk, n_particles=n_particles, n_vars=self.n_vars)
 
         return z, theta
 
 
-    def f_kernel(self, x_latent, x_theta, y_latent, y_theta, h_latent, h_theta, t):
+    def f_kernel(self, x_latent, x_theta, y_latent, y_theta):
         """
         Evaluates kernel
 
@@ -102,20 +130,16 @@ class JointDiBS(DiBS):
             x_theta: parameter PyTree 
             y_latent: latent tensor [d, k, 2]
             y_theta: parameter PyTree 
-            h_latent (float): kernel bandwidth for Z term
-            h_theta (float): kernel bandwidth for theta term
-            t: step
 
         Returns:
             kernel value
         """
         return self.kernel.eval(
             x_latent=x_latent, x_theta=x_theta,
-            y_latent=y_latent, y_theta=y_theta,
-            h_latent=h_latent, h_theta=h_theta)
+            y_latent=y_latent, y_theta=y_theta)
     
 
-    def f_kernel_mat(self, x_latents, x_thetas, y_latents, y_thetas, h_latent, h_theta, t):
+    def f_kernel_mat(self, x_latents, x_thetas, y_latents, y_thetas):
         """
         Computes pairwise kernel matrix
 
@@ -124,18 +148,15 @@ class JointDiBS(DiBS):
             x_thetas: parameter PyTree with batch size A as leading dim
             y_latents: latent tensor [B, d, k, 2]
             y_thetas: parameter PyTree with batch size B as leading dim
-            h_latent (float): kernel bandwidth for Z term
-            h_theta (float): kernel bandwidth for theta term
-            t: step
 
         Returns:
             [A, B] kernel values
         """
-        return vmap(vmap(self.f_kernel, (None, None, 0, 0, None, None, None), 0), 
-            (0, 0, None, None, None, None, None), 0)(x_latents, x_thetas, y_latents, y_thetas, h_latent, h_theta, t)
+        return vmap(vmap(self.f_kernel, (None, None, 0, 0), 0),
+            (0, 0, None, None), 0)(x_latents, x_thetas, y_latents, y_thetas)
 
     
-    def eltwise_grad_kernel_z(self, x_latents, x_thetas, y_latent, y_theta, h_latent, h_theta, t):
+    def eltwise_grad_kernel_z(self, x_latents, x_thetas, y_latent, y_theta):
         """
         Computes gradient d/dz k((z, theta), (z', theta')) elementwise for each provided particle (z, theta)
 
@@ -144,19 +165,16 @@ class JointDiBS(DiBS):
             x_thetas: batch of parameter PyTree with leading dim `n_particles`
             y_latent: single latent particle [d, k, 2] (z')
             y_theta: single parameter PyTree (theta')
-            h_latent (float): kernel bandwidth for Z term
-            h_theta (float): kernel bandwidth for theta term
-            t: step
 
         Returns:
             batch of gradients for latent tensors Z [n_particles, d, k, 2]
         
         """        
         grad_kernel_z = grad(self.f_kernel, 0)
-        return vmap(grad_kernel_z, (0, 0, None, None, None, None, None), 0)(x_latents, x_thetas, y_latent, y_theta, h_latent, h_theta, t)
+        return vmap(grad_kernel_z, (0, 0, None, None), 0)(x_latents, x_thetas, y_latent, y_theta)
 
 
-    def eltwise_grad_kernel_theta(self, x_latents, x_thetas, y_latent, y_theta, h_latent, h_theta, t):
+    def eltwise_grad_kernel_theta(self, x_latents, x_thetas, y_latent, y_theta):
         """
         Computes gradient d/dtheta k((z, theta), (z', theta')) elementwise for each provided particle (z, theta)
 
@@ -165,18 +183,15 @@ class JointDiBS(DiBS):
             x_thetas: batch of parameter PyTree with leading dim `n_particles`
             y_latent: single latent particle [d, k, 2] (z')
             y_theta: single parameter PyTree (theta')
-            h_latent (float): kernel bandwidth for Z term
-            h_theta (float): kernel bandwidth for theta term
-            t: step
 
         Returns:
             batch of gradients for parameters (PyTree with leading dim `n_particles`)
         """
         grad_kernel_theta = grad(self.f_kernel, 1)
-        return vmap(grad_kernel_theta, (0, 0, None, None, None, None, None), 0)(x_latents, x_thetas, y_latent, y_theta, h_latent, h_theta, t)
+        return vmap(grad_kernel_theta, (0, 0, None, None), 0)(x_latents, x_thetas, y_latent, y_theta)
 
 
-    def z_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_z, h_latent, h_theta, t):
+    def z_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_z):
         """
         Computes SVGD update for `single_z` of a (single_z, single_theta) tuple given the kernel values 
         `kxx` and the d/dz gradients of the target density for each of the available particles 
@@ -195,21 +210,20 @@ class JointDiBS(DiBS):
     
         # compute terms in sum
         weighted_gradient_ascent = kxx[..., None, None, None] * grad_log_prob_z
-        repulsion = self.eltwise_grad_kernel_z(z, theta, single_z, single_theta, h_latent, h_theta, t)
+        repulsion = self.eltwise_grad_kernel_z(z, theta, single_z, single_theta)
 
         # average and negate (for optimizer)
         return - (weighted_gradient_ascent + repulsion).mean(axis=0)
-
 
     def parallel_update_z(self, *args):
         """
         Parallelizes `z_update` for all available particles
         Otherwise, same inputs as `z_update`.
         """
-        return vmap(self.z_update, (0, 0, 1, None, None, None, None, None, None), 0)(*args)
+        return vmap(self.z_update, (0, 0, 1, None, None, None), 0)(*args)
 
 
-    def theta_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_theta, h_latent, h_theta, t):
+    def theta_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_theta):
         """
         Computes SVGD update for `single_theta` of a (single_z, single_theta) tuple given the kernel values 
         `kxx` and the d/dtheta gradients of the target density for each of the available particles 
@@ -233,7 +247,7 @@ class JointDiBS(DiBS):
                 expand_by(kxx, leaf_theta_grad.ndim - 1) * leaf_theta_grad, 
             grad_log_prob_theta)
         
-        repulsion = self.eltwise_grad_kernel_theta(z, theta, single_z, single_theta, h_latent, h_theta, t)
+        repulsion = self.eltwise_grad_kernel_theta(z, theta, single_z, single_theta)
 
         # average and negate (for optimizer)
         return  tree_multimap(
@@ -248,7 +262,7 @@ class JointDiBS(DiBS):
         Parallelizes `theta_update` for all available particles
         Otherwise, same inputs as `theta_update`.
         """
-        return vmap(self.theta_update, (0, 0, 1, None, None, None, None, None, None), 0)(*args)
+        return vmap(self.theta_update, (0, 0, 1, None, None, None), 0)(*args)
 
 
     def svgd_step(self, t, opt_state_z, opt_state_theta, key, sf_baseline):
@@ -270,10 +284,6 @@ class JointDiBS(DiBS):
         theta = self.get_params(opt_state_theta) # PyTree with `n_particles` leading dim
         n_particles = z.shape[0]
 
-        # make sure same bandwith is used for all calls to k(x, x') (in case e.g. the median heuristic is applied)
-        h_latent = self.kernel.h_latent
-        h_theta = self.kernel.h_theta
-
         # d/dtheta log p(theta, D | z)
         key, subk = random.split(key)
         dtheta_log_prob = self.eltwise_grad_theta_likelihood(z, theta, t, subk)
@@ -290,11 +300,11 @@ class JointDiBS(DiBS):
         dz_log_prob = dz_log_prior + dz_log_likelihood
         
         # k((z, theta), (z, theta)) for all particles
-        kxx = self.f_kernel_mat(z, theta, z, theta, h_latent, h_theta, t)
+        kxx = self.f_kernel_mat(z, theta, z, theta)
 
         # transformation phi() applied in batch to each particle individually
-        phi_z = self.parallel_update_z(z, theta, kxx, z, theta, dz_log_prob, h_latent, h_theta, t)
-        phi_theta = self.parallel_update_theta(z, theta, kxx, z, theta, dtheta_log_prob, h_latent, h_theta, t)
+        phi_z = self.parallel_update_z(z, theta, kxx, z, theta, dz_log_prob)
+        phi_theta = self.parallel_update_theta(z, theta, kxx, z, theta, dtheta_log_prob)
 
         # apply transformation
         # `x += stepsize * phi`; the phi returned is negated for SVGD
@@ -310,25 +320,29 @@ class JointDiBS(DiBS):
         return jax.lax.fori_loop(start, start + n_steps, lambda i, args: self.svgd_step(i, *args), init)
 
 
-    def sample_particles(self, *, n_steps, init_z, init_theta, key, callback=None, callback_every=None):
+    def sample(self, *, key, n_particles, steps, n_dim_particles=None, callback=None, callback_every=None):
         """
-        Deterministically transforms particles to minimize KL to target using SVGD
+        Use SVGD to sample `n_particles` particles (G, theta) from the joint posterior p(G, theta | D) as
+        defined by the BN model `self.inference_model`
 
         Arguments:
-            n_steps (int): number of SVGD steps performed
-            init_z: batch of initialized latent tensor particles [n_particles, d, k, 2]
-            init_theta:  batch of parameters PyTree (i.e. for a general parameter set shape)
-                with leading dimension `n_particles`
             key: prng key
+            n_particles (int): number of particles to sample
+            steps (int): number of SVGD steps performed
+            n_dim_particles (int): latent dimensionality k of particles Z; default is `n_vars`
             callback: function to be called every `callback_every` steps of SVGD.
             callback_every: if `None`, `callback` is only called after particle updates have finished
 
-        Returns: 
-            `n_particles` samples that approximate the DiBS target density
-            particles_z: [n_particles, d, k, 2]
+        Returns:
+            particles_g: [n_particles, n_vars, n_vars]
             particles_theta: PyTree of parameters with leading dimension `n_particles`
            
         """
+
+        # randomly sample initial particles
+        key, subk = random.split(key)
+        init_z, init_theta = self.sample_initial_random_particles(key=subk, n_particles=n_particles,
+                                                                  n_dim=n_dim_particles)
 
         # initialize score function baseline (one for each particle)
         n_particles, _, n_dim, _ = init_z.shape
@@ -337,30 +351,16 @@ class JointDiBS(DiBS):
         if self.latent_prior_std is None:
             self.latent_prior_std = 1.0 / jnp.sqrt(n_dim)
 
-        # init optimizer
-        if self.optimizer['name'] == 'gd':
-            opt = optimizers.sgd(self.optimizer['stepsize']/ 10.0) # comparable scale for tuning
-        elif self.optimizer['name'] == 'momentum':
-            opt = optimizers.momentum(self.optimizer['stepsize'])
-        elif self.optimizer['name'] == 'adagrad':
-            opt = optimizers.adagrad(self.optimizer['stepsize'])
-        elif self.optimizer['name'] == 'adam':
-            opt = optimizers.adam(self.optimizer['stepsize'])
-        elif self.optimizer['name'] == 'rmsprop':
-            opt = optimizers.rmsprop(self.optimizer['stepsize'])
-        else:
-            raise ValueError()
-
         # maintain updated particles with optimizer state
-        opt_init, self.opt_update, get_params = opt
+        opt_init, self.opt_update, get_params = self.opt
         self.get_params = jit(get_params)
         opt_state_z = opt_init(init_z)
         opt_state_theta = opt_init(init_theta)
 
         """Execute particle update steps for all particles in parallel using `vmap` functions"""
         # faster if for-loop is functionally pure and compiled, so only interrupt for callback
-        callback_every = callback_every or n_steps
-        for t in range(0, n_steps, callback_every):
+        callback_every = callback_every or steps
+        for t in range(0, steps, callback_every):
 
             # perform sequence of SVGD steps
             opt_state_z, opt_state_theta, key, sf_baseline = self.svgd_loop(t, callback_every,
@@ -377,7 +377,53 @@ class JointDiBS(DiBS):
                     thetas=theta,
                 )
 
-        # return transported particles
+        # retrieve transported particles
         z_final = jax.device_get(self.get_params(opt_state_z))
         theta_final = jax.device_get(self.get_params(opt_state_theta))
-        return z_final, theta_final
+
+        # as alpha is large, we can convert the latents Z to their corresponding graphs G
+        g_final = self.particle_to_g_lim(z_final)
+        return g_final, theta_final
+
+
+    def get_empirical(self, g, theta):
+        """
+        Converts batch of binary (adjacency) matrices and parameters into empirical particle distribution
+
+        Args:
+            g: [N, d, d] with {0,1} values
+            theta: PyTree with leading dim `N`
+
+        Returns:
+            ParticleDistribution
+        """
+        N, _, _ = g.shape
+
+        # since theta continuous, each particle (G, theta) is unique always
+        logp = - jnp.log(N) * jnp.ones(N)
+
+        return ParticleDistribution(logp=logp, g=g, theta=theta)
+
+
+    def get_mixture(self, g, theta):
+        """
+        Converts batch of binary (adjacency) matrices and parameters into mixture particle distribution,
+        where mixture weights correspond to unnormalized target (i.e. posterior) probabilities
+
+        Args:
+           g: [N, d, d] with {0,1} values
+           theta: PyTree with leading dim `N`
+
+        Returns:
+           ParticleDistribution
+
+        """
+        N, _, _ = g.shape
+
+        # mixture weighted by respective joint probabilities
+        eltwise_log_joint_target = vmap(lambda single_g, single_theta:
+                                        self.log_joint_prob(single_g, single_theta, self.x, None), (0, 0), 0)
+        logp = eltwise_log_joint_target(g, theta)
+        logp -= logsumexp(logp)
+
+        return ParticleDistribution(logp=logp, g=g, theta=theta)

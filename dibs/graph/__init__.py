@@ -1,1 +1,1 @@
-from .graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution
+from .graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection

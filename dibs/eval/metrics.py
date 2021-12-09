@@ -4,93 +4,71 @@ warnings.filterwarnings("ignore", message="No GPU automatically detected")
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 
-import numpy as onp
-
-from dibs.utils.func import id2bit, pairwise_structural_hamming_distance
 from dibs.utils.tree import tree_mul, tree_select
 from dibs.utils.graph import elwise_acyclic_constr_nograd
 
-
 from sklearn import metrics as sklearn_metrics
 
-#
-# marginal posterior p(G | D) metrics
-#
+from typing import Any, NamedTuple
 
-def l1_edge_belief(*, dist, g):
-    """
-    L1 edge belief error as defined by Murphy, 2001.
+
+class ParticleDistribution(NamedTuple):
+    logp: Any
+    g: Any
+    theta: Any = None
+
+
+def pairwise_structural_hamming_distance(*, x, y):
+    """ Computes pairwise Structural Hamming distance, i.e.
+    the number of edge insertions, deletions or flips in order to transform one graph to another
+        - this means, edge reversals do not double count
+        - this means, getting an undirected edge wrong only counts 1
 
     Args:
-        dist: log distribution tuple as e.g. given by `particle_marginal_empirical`
-        g: ground truth graph [d, d] 
+        x:  [N, ...]
+        y:  [M, ...]
 
     Returns:
-        [1, ]
+        [N, M] where elt i,j is  SHD(x[i], y[j]) = sum(x[i] != y[j])
     """
-    n_vars = g.shape[0]
 
-    # convert graph ids to adjacency matrices
-    id_particles_cyc, log_weights_cyc = dist 
-    particles_cyc = id2bit(id_particles_cyc, n_vars)
+    # all but first axis is usually used for the norm, assuming that first dim is batch dim
+    assert(x.ndim == 3 and y.ndim == 3)
 
-    # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(particles_cyc, n_vars) == 0
-    if is_dag.sum() == 0:
-        # score as "wrong on every edge"
-        return n_vars * (n_vars - 1) / 2
+    # via computing pairwise differences
+    pw_diff = jnp.abs(jnp.expand_dims(x, axis=1) - jnp.expand_dims(y, axis=0))
+    pw_diff = pw_diff + pw_diff.transpose((0, 1, 3, 2))
 
-    particles = particles_cyc[is_dag, :, :]
-    log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
+    # ignore double edges
+    pw_diff = jnp.where(pw_diff > 1, 1, pw_diff)
+    shd = jnp.sum(pw_diff, axis=(2, 3)) / 2
 
-    # P(G_ij = 1) = sum_G w_G 1[G = G] in log space
-    log_edge_belief, log_edge_belief_sgn = logsumexp(
-        log_weights[..., jnp.newaxis, jnp.newaxis], 
-        b=particles.astype(log_weights.dtype), 
-        axis=0, return_sign=True)
-
-    # L1 edge error
-    p_edge = log_edge_belief_sgn * jnp.exp(log_edge_belief)
-    p_no_edge = 1 - p_edge
-    err_connected = jnp.sum(g * p_no_edge)
-    err_notconnected = jnp.sum(
-        jnp.triu((1 - g) * (1 - g).T * (1 - p_no_edge * p_no_edge.T), k=0))
-
-    err = err_connected + err_notconnected
-    return err
+    return shd
 
 
-def expected_shd(*, dist, g, use_cpdag=False):
+def expected_shd(*, dist, g):
     """
     Expected structural hamming distance
     Defined as 
         expected_shd = sum_G p(G | D)  SHD(G, G*)
 
     Args:
-        dist: log distribution tuple
-        g: ground truth graph [d, d]
+        dist: ParticleDistribution
+        g: [n_vars, n_vars]  ground truth graph
 
     Returns: 
         [1, ]
     """
     n_vars = g.shape[0]
 
-    # convert graph ids to adjacency matrices
-    id_particles_cyc, log_weights_cyc = dist
-    particles_cyc = id2bit(id_particles_cyc, n_vars)
-
     # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(particles_cyc, n_vars) == 0
+    is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
     if is_dag.sum() == 0:
         # score as "wrong on every edge"
         return n_vars * (n_vars - 1) / 2
     
-    particles = particles_cyc[is_dag, :, :]
-    log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
-    
-    # convert to cpdag?
-    if use_cpdag:
-        raise NotImplementedError('Not implemented in lightweight branch because requires `cdt.metrics.get_CPDAG`, which requires R.')
+    particles = dist.g[is_dag, :, :]
+    log_weights = dist.logp[is_dag] - logsumexp(dist.logp[is_dag])
     
     # compute shd for each graph
     shds = pairwise_structural_hamming_distance(x=particles, y=g[None]).squeeze(1)
@@ -99,8 +77,8 @@ def expected_shd(*, dist, g, use_cpdag=False):
     log_expected_shd, log_expected_shd_sgn = logsumexp(
         log_weights, b=shds.astype(log_weights.dtype), axis=0, return_sign=True)
 
-    expected_shd = log_expected_shd_sgn * jnp.exp(log_expected_shd)
-    return expected_shd
+    eshd = log_expected_shd_sgn * jnp.exp(log_expected_shd)
+    return eshd
 
 
 def expected_edges(*, dist, g):
@@ -110,31 +88,27 @@ def expected_edges(*, dist, g):
         expected_edges = sum_G p(G | D)  #edges(G)
 
     Args:
-        dist: log distribution tuple
-        g: ground truth graph [d, d]
+        dist: ParticleDistribution
+        g: [n_vars, n_vars]  ground truth graph
 
     Returns: 
         [1, ]
     """
     n_vars = g.shape[0]
 
-    # convert graph ids to adjacency matrices
-    id_particles_cyc, log_weights_cyc = dist
-    particles_cyc = id2bit(id_particles_cyc, n_vars)
-
     # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(particles_cyc, n_vars) == 0
+    is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
     if is_dag.sum() == 0:
         # if no acyclic graphs, count the edges of the cyclic graphs; more consistent 
-        n_edges_cyc = particles_cyc.sum(axis=(-1, -2))
+        n_edges_cyc = dist.g.sum(axis=(-1, -2))
         log_expected_edges_cyc, log_expected_edges_cyc_sgn = logsumexp(
-            log_weights_cyc, b=n_edges_cyc.astype(log_weights_cyc.dtype), axis=0, return_sign=True)
+            dist.logp, b=n_edges_cyc.astype(dist.logp.dtype), axis=0, return_sign=True)
 
         expected_edges_cyc = log_expected_edges_cyc_sgn * jnp.exp(log_expected_edges_cyc)
         return expected_edges_cyc
     
-    particles = particles_cyc[is_dag, :, :]
-    log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
+    particles = dist.g[is_dag, :, :]
+    log_weights = dist.logp[is_dag] - logsumexp(dist.logp[is_dag])
     
     # count edges for each graph
     n_edges = particles.sum(axis=(-1, -2))
@@ -143,19 +117,17 @@ def expected_edges(*, dist, g):
     log_expected_edges, log_expected_edges_sgn = logsumexp(
         log_weights, b=n_edges.astype(log_weights.dtype), axis=0, return_sign=True)
 
-    expected_edges = log_expected_edges_sgn * jnp.exp(log_expected_edges)
-    return expected_edges
+    edges = log_expected_edges_sgn * jnp.exp(log_expected_edges)
+    return edges
 
 
-def threshold_metrics(*, dist, g, undirected_cpdag_oriented_correctly=False):
+def threshold_metrics(*, dist, g):
     """
     Various threshold metrics (e.g. AUROC) 
 
     Args:
-        dist: log distribution tuple
-        g: ground truth graph [d, d]
-        undirected_cpdag_oriented_correctly (bool): 
-            if True, uses CPDAGs instead of DAGs
+        dist: ParticleDistribution
+        g: [n_vars, n_vars]  ground truth graph
 
     Returns: 
         [1, ]
@@ -163,12 +135,8 @@ def threshold_metrics(*, dist, g, undirected_cpdag_oriented_correctly=False):
     n_vars = g.shape[0]
     g_flat = g.reshape(-1)
 
-    # convert graph ids to adjacency matrices
-    id_particles_cyc, log_weights_cyc = dist 
-    particles_cyc = id2bit(id_particles_cyc, n_vars)
-
     # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(particles_cyc, n_vars) == 0
+    is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
     if is_dag.sum() == 0:
         # score as random/junk classifier
         # for AUROC: 0.5
@@ -179,12 +147,8 @@ def threshold_metrics(*, dist, g, undirected_cpdag_oriented_correctly=False):
             'ave_prec': (g.sum() / (n_vars * (n_vars - 1))).item(),
         }
 
-    particles = particles_cyc[is_dag, :, :]
-    log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
-
-    # count undirected cpdag edges in correct orientation IF correct AND only once IF incorrect? 
-    if undirected_cpdag_oriented_correctly:
-        raise NotImplementedError('Not implemented in lightweight branch because requires `cdt.metrics.get_CPDAG`, which requires R.')
+    particles = dist.g[is_dag, :, :]
+    log_weights = dist.logp[is_dag] - logsumexp(dist.logp[is_dag])
 
     # P(G_ij = 1) = sum_G w_G 1[G = G] in log space
     log_edge_belief, log_edge_belief_sgn = logsumexp(
@@ -214,13 +178,13 @@ def threshold_metrics(*, dist, g, undirected_cpdag_oriented_correctly=False):
     }
 
 
-def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_target, x):
+def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_marginal_likelihood, x):
     """
     Computes neg. ave log marginal likelihood.
 
     Args:
-        dist:  log distribution tuple
-        eltwise_log_target: function satisfying [:, d, d] -> [:, ]
+        dist: ParticleDistribution
+        eltwise_log_marginal_likelihood: function satisfying [:, n_vars, n_vars], [N, n_vars] -> [:, ]
             and computing P(D | G) for held-out D
         x: [N, d]
 
@@ -229,22 +193,18 @@ def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_target, x):
     """
     n_ho_observations, n_vars = x.shape
 
-   # convert graph ids to adjacency matrices
-    id_particles_cyc, log_weights_cyc = dist
-    particles_cyc = id2bit(id_particles_cyc, n_vars)
-
     # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(particles_cyc, n_vars) == 0
+    is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
     if is_dag.sum() == 0:
         # score as empty graph only
-        particles = jnp.zeros((1, n_vars, n_vars), dtype=particles_cyc.dtype)
-        log_weights = jnp.array([0.0], dtype=log_weights_cyc.dtype)
+        g = jnp.zeros((1, n_vars, n_vars), dtype=dist.g.dtype)
+        log_weights = jnp.array([0.0], dtype=dist.logp.dtype)
 
     else:
-        particles = particles_cyc[is_dag, :, :]
-        log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
+        g = dist.g[is_dag, :, :]
+        log_weights = dist.logp[is_dag] - logsumexp(dist.logp[is_dag])
         
-    log_likelihood = eltwise_log_target(particles, x)
+    log_likelihood = eltwise_log_marginal_likelihood(g, x)
 
      # - sum_G p(G | D) log(p(x | G))
     log_score, log_score_sgn = logsumexp(
@@ -253,43 +213,36 @@ def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_target, x):
     return score
 
 
-#
-# joint posterior p(G, theta | D) metrics
-#
-
-def neg_ave_log_likelihood(*, dist, eltwise_log_joint_target, x):
+def neg_ave_log_likelihood(*, dist, eltwise_log_likelihood, x):
     """
     Computes neg. ave log marginal likelihood.
 
     Args:
-        dist:  log distribution 3-tuple (joint distribution)
-        eltwise_log_target: function satisfying [:, n_vars, n_vars], [:, n_vars, n_vars], [N, n_vars] -> [:, ]
+        dist: ParticleDistribution
+        eltwise_log_likelihood: function satisfying [:, n_vars, n_vars], [:, n_vars, n_vars], [N, n_vars] -> [:, ]
             and computing p(D | G, theta) for held-out D=x
         x: [N, d]
 
     Returns: 
         [1, ]
     """
-
+    assert dist.theta is not None
     n_ho_observations, n_vars = x.shape
 
-    ids_cyc, theta_cyc, log_weights_cyc = dist
-    hard_g_cyc = id2bit(ids_cyc, n_vars)
-
     # select acyclic graphs
-    is_dag = elwise_acyclic_constr_nograd(hard_g_cyc, n_vars) == 0
+    is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
     if is_dag.sum() == 0:
         # score as empty graph only
-        hard_g = tree_mul(hard_g_cyc, 0.0)
-        theta = tree_mul(theta_cyc, 0.0)
-        log_weights = tree_mul(log_weights_cyc, 0.0)
+        g = tree_mul(dist.g, 0.0)
+        theta = tree_mul(dist.theta, 0.0)
+        log_weights = tree_mul(dist.logp, 0.0)
 
     else:
-        hard_g = hard_g_cyc[is_dag, :, :]
-        theta = tree_select(theta_cyc, is_dag)
-        log_weights = log_weights_cyc[is_dag] - logsumexp(log_weights_cyc[is_dag])
+        g = dist.g[is_dag, :, :]
+        theta = tree_select(dist.theta, is_dag)
+        log_weights = dist.logp[is_dag] - logsumexp(dist.logp[is_dag])
         
-    log_likelihood = eltwise_log_joint_target(hard_g, theta, x)
+    log_likelihood = eltwise_log_likelihood(g, theta, x)
 
     # - sum_G p(G, theta | D) log(p(x | G, theta))
     log_score, log_score_sgn = logsumexp(

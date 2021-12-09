@@ -1,4 +1,6 @@
 import os
+import numpy as onp
+
 import jax.numpy as jnp
 from jax import vmap
 from jax import random
@@ -40,6 +42,8 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
         hidden_layers (list): list of ints specifying the dimensions of the hidden sizes
         sig_weight: std dev of weight initialization
         sig_bias: std dev of weight initialization
+        bias: bias of linear layer
+        activation: activation function str; choices: `sigmoid`, `tanh`, `relu`, `leakyrelu`
     
     Returns:
         stax.serial neural net object
@@ -78,22 +82,24 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
     return stax.serial(*modules)
     
 
-class DenseNonlinearGaussianJAX:
+class DenseNonlinearGaussian:
     """	
     Non-linear Gaussian BN with interactions modeled by a fully-connected neural net
     See: https://arxiv.org/abs/1909.13189    
     """
 
-    def __init__(self, *, obs_noise, sig_param, hidden_layers, g_dist=None, verbose=False, activation='relu', bias=True):
-        super(DenseNonlinearGaussianJAX, self).__init__()
+    def __init__(self, *, graph_dist, obs_noise, sig_param, hidden_layers, activation='relu', bias=True):
+        super(DenseNonlinearGaussian, self).__init__()
 
+        self.graph_dist = graph_dist
+        self.n_vars = graph_dist.n_vars
         self.obs_noise = obs_noise
         self.sig_param = sig_param
         self.hidden_layers = hidden_layers
-        self.g_dist = g_dist
-        self.verbose = verbose
         self.activation = activation
         self.bias = bias
+
+        self.no_interv_targets = jnp.zeros(self.n_vars).astype(bool)
 
         # init single neural net function for one variable with jax stax
         self.nn_init_random_params, nn_forward = makeDenseNet(
@@ -133,9 +139,11 @@ class DenseNonlinearGaussianJAX:
         theta_shape = tree_shapes(theta)
         return theta_shape
 
-    def init_parameters(self, *, key, n_vars, n_particles, batch_size=0):
-        """Samples batch of random parameters given dimensions of graph, from p(theta | G) 
-        Args:
+
+    def sample_parameters(self, *, key, n_vars, n_particles=0, batch_size=0):
+        """Samples batch of random parameters given dimensions of graph, from p(theta | G)
+
+        Arguments:
             key: rng
             n_vars: number of variables in BN
             n_particles: number of parameter particles sampled
@@ -144,40 +152,32 @@ class DenseNonlinearGaussianJAX:
         Returns:
             theta : PyTree with leading dimension of `n_particles`
         """
+        shape = [d for d in (batch_size, n_particles, n_vars) if d != 0]
+        subkeys = random.split(key, int(onp.prod(shape))).reshape(*shape, 2)
 
-        if batch_size == 0:
-            subkeys = random.split(key, n_particles * n_vars).reshape(n_particles, n_vars, -1)
+        if len(shape) == 1:
+            _, theta = self.eltwise_nn_init_random_params(subkeys, (n_vars, ))
+
+        elif len(shape) == 2:
             _, theta = self.double_eltwise_nn_init_random_params(subkeys, (n_vars, ))
-        else:
-            subkeys = random.split(key, batch_size * n_particles * n_vars).reshape(batch_size, n_particles, n_vars, -1)
+
+        elif len(shape) == 3:
             _, theta = self.triple_eltwise_nn_init_random_params(subkeys, (n_vars, ))
+
+        else:
+            raise ValueError(f"invalid shape size for nn param initialization {shape}")
             
         # to float64
         prec64 = 'JAX_ENABLE_X64' in os.environ and os.environ['JAX_ENABLE_X64'] == 'True'
         theta = tree_map(lambda arr: arr.astype(jnp.float64 if prec64 else jnp.float32), theta)
         return theta
 
-    def sample_parameters(self, *, key, g):
-        """Samples parameters for neural network. Here, g is ignored.
-        Args:
-            g (igraph.Graph): graph
-            key: rng
 
-        Returns:
-            theta : list of (W, b) tuples, dependent on `hidden_layers`
-        """
-        n_vars = len(g.vs)
-
-        subkeys = random.split(key, n_vars)
-        _, theta = self.eltwise_nn_init_random_params(subkeys, (n_vars, ))
-
-        return theta
-
-
-    def sample_obs(self, *, key, n_samples, g, theta, toporder=None, interv={}):
+    def sample_obs(self, *, key, n_samples, g, theta, toporder=None, interv=None):
         """
         Samples `n_samples` observations by doing single forward passes in topological order
-        Args:
+
+        Arguments:
             key: rng
             n_samples (int): number of samples
             g (igraph.Graph): graph
@@ -187,8 +187,8 @@ class DenseNonlinearGaussianJAX:
         Returns:
             x : [n_samples, d] 
         """
-
-        # find topological order for ancestral sampling
+        if interv is None:
+            interv = {}
         if toporder is None:
             toporder = g.topological_sorting()
 
@@ -228,14 +228,17 @@ class DenseNonlinearGaussianJAX:
 
         return x
 
+    """
+    The following functions need to be functionally pure and @jit-able
+    """
 
-    def log_prob_parameters(self, *, theta, w):
+    def log_prob_parameters(self, *, theta, g):
         """log p(theta | g)
         Assumes N(mean_edge, sig_edge^2) distribution for any given edge 
 
-        Args:
+        Arguments:
             theta: parmeter PyTree
-            w: adjacency matrix of graph [n_vars, n_vars]
+            g: adjacency matrix of graph [n_vars, n_vars]
 
         Returns:
             logprob [1,]
@@ -247,23 +250,23 @@ class DenseNonlinearGaussianJAX:
         # [d, d, dim_first_layer] = [d, d, dim_first_layer] * [d, d, 1]
         if self.bias:
             first_weight_logprobs, first_bias_logprobs = logprobs[0]
-            logprobs[0] = (first_weight_logprobs * w.T[:, :, None], first_bias_logprobs)
+            logprobs[0] = (first_weight_logprobs * g.T[:, :, None], first_bias_logprobs)
         else:
             first_weight_logprobs,  = logprobs[0]
-            logprobs[0] = (first_weight_logprobs * w.T[:, :, None],)
+            logprobs[0] = (first_weight_logprobs * g.T[:, :, None],)
 
         # sum logprobs of every parameter tensor and add all up 
         return tree_reduce(jnp.add, tree_map(jnp.sum, logprobs))
 
 
-    def log_likelihood(self, *, data, theta, w, interv_targets):
+    def log_likelihood(self, *, x, theta, g, interv_targets):
         """log p(x | theta, G)
         Assumes N(mean_obs, obs_noise^2) distribution for any given observation
         
-        Args:
-            data: observations [N, d]
+        Arguments:
+            x: [N, d] observations
             theta: parameter PyTree
-            w: adjacency matrix [n_vars, n_vars]
+            g:  [n_vars, n_vars] graph adjacency matrix
             interv_targets: boolean indicator of intervention locations [n_vars, ]
         
         Returns:
@@ -271,7 +274,7 @@ class DenseNonlinearGaussianJAX:
         """
 
         # [d2, N, d] = [1, N, d] * [d2, 1, d] mask non-parent entries of each j
-        all_x_msk = data[None] * w.T[:, None]
+        all_x_msk = x[None] * g.T[:, None]
 
         # [N, d2] NN forward passes for parameters of each param j 
         all_means = self.double_eltwise_nn_forward(theta, all_x_msk)
@@ -283,7 +286,41 @@ class DenseNonlinearGaussianJAX:
                 interv_targets[None, ...],
                 0.0,
                 # [n_observations, n_vars]
-                jax_normal.logpdf(x=data, loc=all_means, scale=jnp.sqrt(self.obs_noise))
+                jax_normal.logpdf(x=x, loc=all_means, scale=jnp.sqrt(self.obs_noise))
             )
         )
-       
+
+    """
+    Distributions used by DiBS for inference:  prior and joint likelihood 
+    """
+
+    def log_graph_prior(self, g_prob):
+        """ log p(G)
+
+        Arguments:
+            g_prob: [n_vars, n_vars] of edge probabilities in G
+
+        Returns:
+            [1, ]
+        """
+        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
+
+
+    def observational_log_joint_prob(self, g, theta, x, rng):
+        """ log p(D, theta | G)  =  log p(D | G, theta) + log p(theta | G)
+
+        Arguments:
+           g: [n_vars, n_vars] graph adjacency matrix
+           theta: PyTree
+           x: [n_observations, n_vars] observational data
+           rng
+
+        Returns:
+           [1, ]
+        """
+        log_prob_theta = self.log_prob_parameters(g=g, theta=theta)
+        log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=self.no_interv_targets)
+        return log_prob_theta + log_likelihood
+
+
+

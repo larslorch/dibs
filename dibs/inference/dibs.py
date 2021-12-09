@@ -20,8 +20,9 @@ class DiBS:
     when not being used to this requirement.
 
     Args:
-        target_log_prior: log p(G); differentiable log prior probability using the probabilities of edges (as implied by Z)
-        target_log_joint_prob: log p(theta, D | G); differentiable or non-differentiable discrete log probability of target distribution
+        x: [n_observations, n_vars] matrix of iid observations of the variables
+        log_graph_prior: log p(G)
+        log_joint_prob: log p(theta, D | G)
         alpha_linear (float): inverse temperature parameter schedule of sigmoid
         beta_linear (float): inverse temperature parameter schedule of prior
         n_grad_mc_samples (int): MC samples in gradient estimator for likelihood term p(theta, D | G)
@@ -31,14 +32,16 @@ class DiBS:
         latent_prior_std (float): standard deviation of Gaussian prior over Z; defaults to 1/sqrt(k)
     """
 
-    def __init__(self, *, target_log_prior, target_log_joint_prob, alpha_linear, beta_linear=1.0, tau=1.0,
+    def __init__(self, *, x, log_graph_prior, log_joint_prob, alpha_linear, beta_linear=1.0, tau=1.0,
                  n_grad_mc_samples=128, n_acyclicity_mc_samples=32, 
                  grad_estimator_z='reparam', score_function_baseline=0.0,
                  latent_prior_std=None, verbose=False):
         super(DiBS, self).__init__()
 
-        self.target_log_prior = target_log_prior
-        self.target_log_joint_prob = target_log_joint_prob
+        self.x = x
+        self.n_vars = x.shape[-1]
+        self.log_graph_prior = log_graph_prior
+        self.log_joint_prob = log_joint_prob
         self.alpha = lambda t: (alpha_linear * t)
         self.beta = lambda t: (beta_linear * t)
         self.tau = tau
@@ -265,18 +268,18 @@ class DiBS:
 
     def eltwise_log_joint_prob(self, gs, single_theta, rng):
         """
-        log p(data | G, theta) batched over samples of G
+        log p(theta, D | G) batched over samples of G
 
         Args:
             gs: batch of graphs [n_graphs, d, d]
             single_theta: single parameter PyTree
-            rng:  [1, ]
+            rng:  [1, ] for mini-batching `x` potentially
 
         Returns:
             batch of logprobs [n_graphs, ]
         """
 
-        return vmap(self.target_log_joint_prob, (0, None, None), 0)(gs, single_theta, rng)
+        return vmap(self.log_joint_prob, (0, None, None, None), 0)(gs, single_theta, self.x, rng)
 
     
 
@@ -299,7 +302,7 @@ class DiBS:
 
         """
         soft_g_sample = self.particle_to_soft_graph(single_z, eps, t)
-        return self.target_log_joint_prob(soft_g_sample, single_theta, subk)
+        return self.log_joint_prob(soft_g_sample, single_theta, self.x, subk)
     
 
     #
@@ -533,8 +536,8 @@ class DiBS:
         # PyTree  shape of `single_theta` with additional leading dimension [n_mc_numerator, ...]
         # d/dtheta log p(theta, D | G) for a batch of G samples
         # use the same minibatch of data as for other log prob evaluation (if using minibatching)
-        grad_theta_log_joint_prob = grad(self.target_log_joint_prob, 1)
-        grad_theta = vmap(grad_theta_log_joint_prob, (0, None, None), 0)(g_samples, single_theta, subk_)
+        grad_theta_log_joint_prob = grad(self.log_joint_prob, 1)
+        grad_theta = vmap(grad_theta_log_joint_prob, (0, None, None, None), 0)(g_samples, single_theta, self.x, subk_)
 
         # stable computation of exp/log/divide and PyTree compatible
         # sums over MC graph samples dimension to get MC gradient estimate of theta
@@ -612,7 +615,7 @@ class DiBS:
         return mc_gradient_samples.mean(0)
 
 
-    def target_log_prior_particle(self, single_z, t):
+    def log_graph_prior_particle(self, single_z, t):
         """
         log p(Z) approx. log p(G) via edge probabilities
 
@@ -628,7 +631,7 @@ class DiBS:
         single_soft_g = self.edge_probs(single_z, t)
 
         # [1, ]
-        return self.target_log_prior(single_soft_g)
+        return self.log_graph_prior(single_soft_g)
 
 
     def eltwise_grad_latent_prior(self, zs, subkeys, t):
@@ -654,10 +657,10 @@ class DiBS:
 
         # log f(Z) term
         # [d, k, 2], [1,] -> [d, k, 2]
-        grad_target_log_prior_particle = grad(self.target_log_prior_particle, 0)
+        grad_log_graph_prior_particle = grad(self.log_graph_prior_particle, 0)
 
         # [n_particles, d, k, 2], [1,] -> [n_particles, d, k, 2]
-        grad_prior_z = vmap(grad_target_log_prior_particle, (0, None), 0)(zs, t)
+        grad_prior_z = vmap(grad_log_graph_prior_particle, (0, None), 0)(zs, t)
 
         # constraint term
         # [n_particles, d, k, 2], [n_particles,], [1,] -> [n_particles, d, k, 2]
@@ -667,4 +670,32 @@ class DiBS:
                - zs / (self.latent_prior_std ** 2.0) \
                + grad_prior_z 
             
-        
+
+    def visualize_callback(self, ipython=True, save_path=None):
+        """Returns callback function for visualization of particles during inference updates
+        Arguments:
+            ipython (bool): set to `True` when running in a jupyter notebook
+            save_path (str): path to save plotted images to
+        """
+
+        from dibs.utils.visualize import visualize
+        from dibs.utils.graph import elwise_acyclic_constr_nograd as constraint
+        if ipython:
+            from IPython import display
+
+        def callback(**kwargs):
+            zs = kwargs["zs"]
+            gs = kwargs["dibs"].particle_to_g_lim(zs)
+            probs = kwargs["dibs"].edge_probs(zs, kwargs["t"])
+            if ipython:
+                display.clear_output(wait=True)
+            visualize(probs,  save_path=save_path, t=kwargs["t"], show=True)
+            print(
+                f'iteration {kwargs["t"]:6d}'
+                f' | alpha {self.alpha(kwargs["t"]):6.1f}'
+                f' | beta {self.beta(kwargs["t"]):6.1f}'
+                f' | #cyclic {(constraint(gs, self.n_vars) > 0).sum().item():3d}'
+            )
+            return
+
+        return callback
