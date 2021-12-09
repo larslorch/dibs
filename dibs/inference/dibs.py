@@ -161,7 +161,7 @@ class DiBS:
         scores = jnp.einsum('...ik,...jk->...ij', z[..., 0], z[..., 1])
 
         # simply take hard limit of sigmoid in gumbel-softmax/concrete distribution
-        hard_graph = ((self.tau * (eps + self.alpha(t) * scores)) > 0.0).astype(jnp.float64)
+        hard_graph = ((self.tau * (eps + self.alpha(t) * scores)) > 0.0).astype(jnp.float32)
 
         # mask diagonal since it is explicitly not modeled
         n_vars = hard_graph.shape[-1]

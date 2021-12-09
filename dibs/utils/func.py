@@ -1,14 +1,11 @@
-import os
-os.environ['JAX_ENABLE_X64'] = 'True'  # float64 precision
-
 import functools
 
-import numpy as onp # needed for np.unique(axis=0)
+import numpy as onp
 
 import jax.numpy as jnp
 from jax import jit
 from jax.scipy.special import logsumexp
-from jax.tree_util import tree_flatten, tree_map, tree_multimap, tree_reduce
+from jax.tree_util import tree_map, tree_multimap, tree_reduce
 
 
 def expand_by(arr, n):

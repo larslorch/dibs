@@ -1,3 +1,4 @@
+import os
 import jax.numpy as jnp
 from jax import vmap
 from jax import random
@@ -152,7 +153,8 @@ class DenseNonlinearGaussianJAX:
             _, theta = self.triple_eltwise_nn_init_random_params(subkeys, (n_vars, ))
             
         # to float64
-        theta = tree_map(lambda arr: arr.astype(jnp.float64), theta)
+        prec64 = 'JAX_ENABLE_X64' in os.environ and os.environ['JAX_ENABLE_X64'] == 'True'
+        theta = tree_map(lambda arr: arr.astype(jnp.float64 if prec64 else jnp.float32), theta)
         return theta
 
     def sample_parameters(self, *, key, g):

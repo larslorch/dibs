@@ -1,6 +1,7 @@
 import functools
-import tqdm
+import math
 
+import jax
 import jax.numpy as jnp
 from jax import jit, vmap, random, grad
 from jax.experimental import optimizers
@@ -250,23 +251,21 @@ class JointDiBS(DiBS):
         return vmap(self.theta_update, (0, 0, 1, None, None, None, None, None, None), 0)(*args)
 
 
-    # this is the crucial @jit
-    @functools.partial(jit, static_argnums=(0,))
-    def svgd_step(self, opt_state_z, opt_state_theta, key, t, sf_baseline):
+    def svgd_step(self, t, opt_state_z, opt_state_theta, key, sf_baseline):
         """
         Performs a single SVGD step in the DiBS framework, updating Z and theta jointly.
         
         Args:
+            t: step
             opt_state_z: optimizer state for latent Z particles; contains [n_particles, d, k, 2]
             opt_state_theta: optimizer state for theta particles; contains PyTree with `n_particles` leading dim
             key: prng key
-            t: step
             sf_baseline: batch of baseline values in case score function gradient is used [n_particles, ]
 
         Returns:
             the updated inputs
         """
-     
+
         z = self.get_params(opt_state_z) # [n_particles, d, k, 2]
         theta = self.get_params(opt_state_theta) # PyTree with `n_particles` leading dim
         n_particles = z.shape[0]
@@ -305,19 +304,24 @@ class JointDiBS(DiBS):
         return opt_state_z, opt_state_theta, key, sf_baseline
     
     
+    # this is the crucial @jit
+    @functools.partial(jit, static_argnums=(0, 2))
+    def svgd_loop(self, start, n_steps, init):
+        return jax.lax.fori_loop(start, start + n_steps, lambda i, args: self.svgd_step(i, *args), init)
 
-    def sample_particles(self, *, n_steps, init_particles_z, init_particles_theta, key, callback=None, callback_every=0):
+
+    def sample_particles(self, *, n_steps, init_z, init_theta, key, callback=None, callback_every=None):
         """
         Deterministically transforms particles to minimize KL to target using SVGD
 
         Arguments:
             n_steps (int): number of SVGD steps performed
-            init_particles_z: batch of initialized latent tensor particles [n_particles, d, k, 2]
-            init_particles_theta:  batch of parameters PyTree (i.e. for a general parameter set shape) 
+            init_z: batch of initialized latent tensor particles [n_particles, d, k, 2]
+            init_theta:  batch of parameters PyTree (i.e. for a general parameter set shape)
                 with leading dimension `n_particles`
             key: prng key
             callback: function to be called every `callback_every` steps of SVGD.
-            callback_every: if == 0, `callback` is never called. 
+            callback_every: if `None`, `callback` is only called after particle updates have finished
 
         Returns: 
             `n_particles` samples that approximate the DiBS target density
@@ -326,16 +330,12 @@ class JointDiBS(DiBS):
            
         """
 
-        z = init_particles_z
-        theta = init_particles_theta
-           
         # initialize score function baseline (one for each particle)
-        n_particles, _, n_dim, _ = z.shape
+        n_particles, _, n_dim, _ = init_z.shape
         sf_baseline = jnp.zeros(n_particles)
 
         if self.latent_prior_std is None:
             self.latent_prior_std = 1.0 / jnp.sqrt(n_dim)
-
 
         # init optimizer
         if self.optimizer['name'] == 'gd':
@@ -350,33 +350,34 @@ class JointDiBS(DiBS):
             opt = optimizers.rmsprop(self.optimizer['stepsize'])
         else:
             raise ValueError()
-        
+
+        # maintain updated particles with optimizer state
         opt_init, self.opt_update, get_params = opt
         self.get_params = jit(get_params)
-        opt_state_z = opt_init(z)
-        opt_state_theta = opt_init(theta)
+        opt_state_z = opt_init(init_z)
+        opt_state_theta = opt_init(init_theta)
 
         """Execute particle update steps for all particles in parallel using `vmap` functions"""
-        it = tqdm.tqdm(range(n_steps), desc='DiBS', disable=not self.verbose)
-        for t in it:
+        # faster if for-loop is functionally pure and compiled, so only interrupt for callback
+        callback_every = callback_every or n_steps
+        for t in range(0, n_steps, callback_every):
 
-            # perform one SVGD step (compiled with @jit)
-            opt_state_z, opt_state_theta, key, sf_baseline  = self.svgd_step(
-                opt_state_z, opt_state_theta, key, t, sf_baseline)
+            # perform sequence of SVGD steps
+            opt_state_z, opt_state_theta, key, sf_baseline = self.svgd_loop(t, callback_every,
+                (opt_state_z, opt_state_theta, key, sf_baseline))
 
             # callback
-            if callback and callback_every and (((t+1) % callback_every == 0) or (t == (n_steps - 1))):
+            if callback:
                 z = self.get_params(opt_state_z)
                 theta = self.get_params(opt_state_theta)
                 callback(
                     dibs=self,
-                    t=t,
+                    t=t + callback_every,
                     zs=z,
                     thetas=theta,
                 )
 
-
         # return transported particles
-        z_final = self.get_params(opt_state_z)
-        theta_final = self.get_params(opt_state_theta)
+        z_final = jax.device_get(self.get_params(opt_state_z))
+        theta_final = jax.device_get(self.get_params(opt_state_theta))
         return z_final, theta_final
