@@ -8,11 +8,11 @@ The repository consists of two branches:
 - `full`: Comprehensive code to reproduce the experimental results in ([Lorch et al., 2021](https://arxiv.org/abs/2105.11839)). The purpose of this branch is reproducibility; the branch is not updated anymore and may contain outdated notation and documentation.
 
 In this implementation, DiBS inference is performed with the particle variational inference method *SVGD*  ([Liu and Wang, 2016](https://arxiv.org/abs/1608.04471)). 
-Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo estimation and gradient ascent-like updates, inference leverages efficient vectorized operations, automatic differentiation, just-in-time compilation, and hardware acceleration, fully implemented with [JAX](https://github.com/google/jax). 
+Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo estimation and gradient ascent-like updates, the inference code leverages efficient vectorized operations, automatic differentiation, just-in-time compilation, and hardware acceleration, fully implemented with [JAX](https://github.com/google/jax). 
 
 ## Quick start
 
-The following code snippet holds an easy example that demonstrates how to use the `dibs` package.
+The following code snippet demonstrates how to use the `dibs` package. In this example, we use DiBS to generate 20 DAG and parameter samples from the joint posterior over Gaussian Bayes nets with means modeled by neural networks. 
 
 ```python
 import jax
@@ -31,13 +31,15 @@ key, subk = random.split(key)
 gs, thetas = dibs.sample(key=subk, n_particles=20, steps=1000)
 ```
 
+Whenever a GPU backend is available to JAX, the implementation will automatically leverage it to accelerate its computations. 
+
 ## Examples
-For a working example of the above, inference of the joint posterior over Gaussian Bayes net graphs and parameters, we recommend opening our example notebook in Google colab, which runs **directly from your browser**:
+For a working example of the above,  we recommend opening our example notebook in Google colab, which runs **directly from your browser**. Select the GPU runtime available in Google colab to see the wall time improvement.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/larslorch/dibs/blob/master/examples/dibs_joint_colab.ipynb)
 
 Analogous notebooks can be found inside the `examples/` folder.
-Executing the code as is will generate samples from the joint posterior over DAG and parameters using DiBS with SVGD and simultaneously visualize the matrices of edge probabilities modeled by the individual particles transported during inference.
+Executing the code will generate samples from the joint posterior with DiBS and simultaneously visualize the matrices of edge probabilities modeled by the individual particles that are transported by SVGD during inference.
 
 <br/><br/>
 <p align="center">
