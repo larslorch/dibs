@@ -34,7 +34,7 @@ gs, thetas = dibs.sample(key=subk, n_particles=20, steps=1000)
 Whenever a GPU backend is available to JAX, the implementation will automatically leverage it to accelerate its computations. 
 
 ## Examples
-For a working example of the above,  we recommend opening our example notebook in Google colab, which runs **directly from your browser**. Select the GPU runtime available in Google colab to see the wall time improvement.
+For a working example of the above,  we recommend opening our example notebook in Google Colab, which runs **directly from your browser**. Selecting the GPU runtime available in Google Colab will make inference significantly faster.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/larslorch/dibs/blob/master/examples/dibs_joint_colab.ipynb)
 
