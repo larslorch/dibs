@@ -5,8 +5,12 @@ import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, random, grad
-from jax.example_libraries import optimizers
 from jax.scipy.special import logsumexp
+try:
+    from jax.example_libraries import optimizers
+except ImportError:
+    # for jax <= 2.24
+    from jax.experimental import optimizers
 
 from dibs.inference.dibs import DiBS
 from dibs.kernel import AdditiveFrobeniusSEKernel

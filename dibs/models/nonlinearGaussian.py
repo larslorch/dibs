@@ -7,12 +7,16 @@ from jax import random
 from jax.ops import index, index_update
 from jax.scipy.stats import norm as jax_normal
 from jax.tree_util import tree_map, tree_reduce
-
-
-import jax.example_libraries.stax as stax
-from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
-
 from jax.nn.initializers import normal
+try:
+    import jax.example_libraries.stax as stax
+    from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
+except ImportError:
+    # for jax <= 2.24
+    import jax.experimental.stax as stax
+    from jax.experimental.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
+
+
 
 from dibs.utils.graph import graph_to_mat
 from dibs.utils.tree import tree_shapes
