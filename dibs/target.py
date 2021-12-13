@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 from jax import random
 
-from dibs.graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection
-from dibs.utils.graph import graph_to_mat
+from dibs.models.graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection
+from dibs.graph_utils import graph_to_mat
 
 from dibs.models import LinearGaussian, BGe, DenseNonlinearGaussian
 

@@ -6,7 +6,7 @@ from jax.nn import sigmoid, log_sigmoid
 import jax.lax as lax
 from jax.tree_util import tree_map, tree_multimap
 
-from dibs.utils.graph import acyclic_constr_nograd
+from dibs.graph_utils import acyclic_constr_nograd
 from dibs.utils.func import expand_by
 
 
@@ -679,7 +679,7 @@ class DiBS:
         """
 
         from dibs.utils.visualize import visualize
-        from dibs.utils.graph import elwise_acyclic_constr_nograd as constraint
+        from dibs.graph_utils import elwise_acyclic_constr_nograd as constraint
         if ipython:
             from IPython import display
 

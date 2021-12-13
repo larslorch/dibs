@@ -1,3 +1,2 @@
-from .linearGaussian import LinearGaussian
-from .linearGaussianEquivalent import BGe
+from .linearGaussian import BGe, LinearGaussian
 from .nonlinearGaussian import DenseNonlinearGaussian

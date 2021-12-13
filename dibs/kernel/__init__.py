@@ -1,2 +1,0 @@
-from .marginal import AdditiveFrobeniusSEKernel
-from .joint import JointAdditiveFrobeniusSEKernel

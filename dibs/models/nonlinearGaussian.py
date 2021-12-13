@@ -16,9 +16,7 @@ except ImportError:
     import jax.experimental.stax as stax
     from jax.experimental.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
 
-
-
-from dibs.utils.graph import graph_to_mat
+from dibs.graph_utils import graph_to_mat
 from dibs.utils.tree import tree_shapes
 
 

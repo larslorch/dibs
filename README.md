@@ -12,13 +12,14 @@ Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo
 
 ## Quick start
 
-The following code snippet demonstrates how to use the `dibs` package. In this example, we use DiBS to generate 20 DAG and parameter samples from the joint posterior over Gaussian Bayes nets with means modeled by neural networks. 
+The following code snippet demonstrates how to use the `dibs` package. In this example, we use DiBS to generate 20 DAG and parameter samples from the joint posterior over Gaussian Bayes nets with means modeled by neural networks.
 
 ```python
 import jax
 import jax.random as random
 from dibs.inference import JointDiBS
-from dibs.eval.target import make_nonlinear_gaussian_model
+from dibs.target import make_nonlinear_gaussian_model
+
 key = random.PRNGKey(0)
 
 # simulate some data

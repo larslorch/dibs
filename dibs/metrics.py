@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 
 from dibs.utils.tree import tree_mul, tree_select
-from dibs.utils.graph import elwise_acyclic_constr_nograd
+from dibs.graph_utils import elwise_acyclic_constr_nograd
 
 from sklearn import metrics as sklearn_metrics
 

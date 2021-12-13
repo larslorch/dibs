@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from jax import random
 from jax.ops import index, index_mul
 
-from dibs.utils.graph import mat_to_graph, graph_to_mat, mat_is_dag
+from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
 
 class GraphDistribution:
     """

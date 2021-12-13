@@ -1,2 +1,1 @@
-from .joint_dibs_svgd import JointDiBS
-from .marginal_dibs_svgd import MarginalDiBS
+from .svgd import MarginalDiBS, JointDiBS
