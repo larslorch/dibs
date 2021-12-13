@@ -5,7 +5,7 @@ import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, random, grad
-from jax.experimental import optimizers
+from jax.example_libraries import optimizers
 from jax.scipy.special import logsumexp
 
 from dibs.inference.dibs import DiBS

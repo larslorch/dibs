@@ -9,8 +9,8 @@ from jax.scipy.stats import norm as jax_normal
 from jax.tree_util import tree_map, tree_reduce
 
 
-import jax.experimental.stax as stax
-from jax.experimental.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
+import jax.example_libraries.stax as stax
+from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
 
 from jax.nn.initializers import normal
 
