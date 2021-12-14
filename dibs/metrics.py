@@ -1,6 +1,3 @@
-import warnings
-warnings.filterwarnings("ignore", message="No GPU automatically detected")
-
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 
@@ -21,8 +18,7 @@ class ParticleDistribution(NamedTuple):
 def pairwise_structural_hamming_distance(*, x, y):
     """ Computes pairwise Structural Hamming distance, i.e.
     the number of edge insertions, deletions or flips in order to transform one graph to another
-        - this means, edge reversals do not double count
-        - this means, getting an undirected edge wrong only counts 1
+    This means, edge reversals do not double count, and that getting an undirected edge wrong only counts 1
 
     Args:
         x:  [N, ...]
@@ -49,8 +45,7 @@ def pairwise_structural_hamming_distance(*, x, y):
 def expected_shd(*, dist, g):
     """
     Expected structural hamming distance
-    Defined as 
-        expected_shd = sum_G p(G | D)  SHD(G, G*)
+    Defined as `expected_shd = sum_G p(G | D)  SHD(G, G*)`
 
     Args:
         dist: ParticleDistribution
@@ -84,8 +79,7 @@ def expected_shd(*, dist, g):
 def expected_edges(*, dist, g):
     """
     Expected number of edges
-    Defined as 
-        expected_edges = sum_G p(G | D)  #edges(G)
+    Defined as `expected_edges = sum_G p(G | D)  #edges(G)`
 
     Args:
         dist: ParticleDistribution

@@ -7,6 +7,7 @@ class AdditiveFrobeniusSEKernel:
     Computes the exponentiated quadratic of the difference in Frobenius norms
 
     k(W, W') = scale * exp(- 1/h ||W - W'||^2_F )
+
     """
 
     def __init__(self, *, h=20.0, scale=1.0):
@@ -33,9 +34,8 @@ class JointAdditiveFrobeniusSEKernel:
     Squared exponential kernel, that simply computes the
     exponentiated quadratic of the difference in Frobenius norms
 
-    k([Z, theta], [Z', theta']) =
-        scale_z     * exp(- 1/h_z  ||Z - Z'||^2_F)
-      + scale_theta * exp(- 1/h_th ||theta - theta'||^2_F )
+    k([Z, theta], [Z', theta']) = scale_z * exp(- 1/h_z  ||Z - Z'||^2_F)
+    + scale_theta * exp(- 1/h_th ||theta - theta'||^2_F )
 
     """
 

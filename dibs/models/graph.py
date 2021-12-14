@@ -27,7 +27,7 @@ class GraphDistribution:
         Computes normalization constant for log p(G), i.e. `Z = log(sum_G p(g))`
 
         Args:
-            all_g: list of igraph.Graph objects
+            all_g (list of `igraph.Graph` objects)
 
         Returns:
             float
@@ -43,8 +43,8 @@ class GraphDistribution:
         p(G) ~ 1
 
         Args:
-            g: igraph.Graph
-            j: node index
+            g (igraph.Graph)
+            j (int): node index
         
         Returns:
             float
@@ -56,7 +56,7 @@ class GraphDistribution:
         p(G) ~ 1
 
         Args:
-            g: igraph.Graph
+            g (igraph.Graph)
         
         Returns:
             float
@@ -115,7 +115,9 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob_single(self, *, g, j):
         """
-        p(G) ~ p^|E| (1-p)^((n choose 2) - |E|)
+        p(G) ~ p^E (1-p)^((n choose 2) - E)
+
+        where E is the number of ingoing edges into node `j` in `g`
         """
         parent_edges = g.incident(j, mode='in')
         n_parents = len(parent_edges)
@@ -123,7 +125,9 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob(self, *, g):
         """
-        p(G) ~ p^|E| (1-p)^((n choose 2) - |E|)
+        p(G) ~ p^E (1-p)^((n choose 2) - E)
+
+        where E is the number of edges in `g`
         """
         N = self.n_vars * (self.n_vars - 1) / 2.0
         E = len(g.es)
@@ -132,7 +136,10 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob_soft(self, *, soft_g):
         """
-        p(G) ~ p^|E| (1-p)^((n choose 2) - |E|)
+        p(G) ~ p^E (1-p)^((n choose 2) - E)
+
+        where E is the (soft) number of edges in `g`, i.e. the sum of entries of the
+        adjacency matrix `g`, which can for instance contain probabilities.
         """
         N = self.n_vars * (self.n_vars - 1) / 2.0
         E = soft_g.sum()

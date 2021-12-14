@@ -12,30 +12,51 @@ from dibs.utils.func import expand_by
 
 class DiBS:
     """
-    This class implements the backbone for DiBS: Differentiable Bayesian Structure Learning (Lorch et al., 2021)
-
-    The code is implemented with `JAX` to allow just-in-time compilation of numpy-style code with `jit()` 
-    and vectorization using `vmap()`. To allow for this, the tensor shapes throughout the algorithm have 
-    to remain *unchanged* depending on the input, and thus the resulting code style may be unfamiliar 
-    when not being used to this requirement.
+    This class implements the backbone for DiBS, i.e. all gradient estimators and sampling
+    components. Any inference method in the DiBS framework should inherit from this class.
 
     Args:
-        x: [n_observations, n_vars] matrix of iid observations of the variables
-        log_graph_prior: log p(G)
-        log_joint_prob: log p(theta, D | G)
-        alpha_linear (float): inverse temperature parameter schedule of sigmoid
-        beta_linear (float): inverse temperature parameter schedule of prior
-        n_grad_mc_samples (int): MC samples in gradient estimator for likelihood term p(theta, D | G)
-        n_acyclicity_mc_samples (int): MC samples in gradient estimator for acyclicity constraint
-        grad_estimator_z (str): gradient estimator d/dZ of expectation; choices: `score` or `reparam`
-        score_function_baseline (float): weight of addition in score function baseline; == 0.0 corresponds to not using a baseline
-        latent_prior_std (float): standard deviation of Gaussian prior over Z; defaults to 1/sqrt(k)
+        x (ndarray): matrix of shape ``[n_observations, n_vars]`` of i.i.d. observations of the variables
+        log_graph_prior (func):
+            function implementing prior :math:`\\log p(G)` of soft adjacency matrix of
+            edge probabilities.
+            For example: ``dibs.graph.ErdosReniDAGDistribution.unnormalized_log_prob_soft``
+            or when bound in e.g. ``dibs.graph.LinearGaussian.log_graph_prior``
+        log_joint_prob:
+            function implementing joint likelihood :math:`\\log p(\Theta, D | G)`
+            of parameters and observations given the discrete graph adjacency matrix
+            For example: ``dibs.models.LinearGaussian.observational_log_joint_prob``
+        alpha_linear (float): slope of of linear schedule for inverse temperature :math:`\\alpha`
+            of sigmoid in latent graph model :math:`p(G | Z)`
+        beta_linear (float):  slope of of linear schedule for inverse temperature :math:`\\beta`
+            of constraint penalty in latent prio :math:`p(Z)`
+        tau (float):  constant Gumbel-softmax temperature parameter
+        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator
+            for likelihood term :math:`p(\Theta, D | G)`
+        n_acyclicity_mc_samples (int):  number of Monte Carlo samples in gradient estimator
+            for acyclicity constraint
+        grad_estimator_z (str): gradient estimator :math:`\\nabla_Z` of expectation over :math:`p(G | Z)`;
+            choices: ``score`` or ``reparam``
+        score_function_baseline (float): scale of additive baseline in score function (REINFORCE) estimator;
+            ``score_function_baseline == 0.0`` corresponds to not using a baseline
+        latent_prior_std (float): standard deviation of Gaussian prior over :math:`Z`; defaults to ``1/sqrt(k)``
+
+
     """
 
-    def __init__(self, *, x, log_graph_prior, log_joint_prob, alpha_linear, beta_linear=1.0, tau=1.0,
-                 n_grad_mc_samples=128, n_acyclicity_mc_samples=32, 
-                 grad_estimator_z='reparam', score_function_baseline=0.0,
-                 latent_prior_std=None, verbose=False):
+    def __init__(self, *,
+                 x,
+                 log_graph_prior,
+                 log_joint_prob,
+                 alpha_linear=0.05,
+                 beta_linear=1.0,
+                 tau=1.0,
+                 n_grad_mc_samples=128,
+                 n_acyclicity_mc_samples=32,
+                 grad_estimator_z='reparam',
+                 score_function_baseline=0.0,
+                 latent_prior_std=None,
+                 verbose=False):
         super(DiBS, self).__init__()
 
         self.x = x
@@ -58,28 +79,26 @@ class DiBS:
 
     def vec_to_mat(self, z, n_vars):
         """
-        Reshapes particle to latent adjacency matrix form
-            last dim gets shaped into matrix
+        Reshapes particle to latent adjacency matrix form. Last dim gets shaped into matrix
         
         Args:
-            w: flattened matrix of shape [..., d * d]
+            z (ndarray): flattened matrix of shape ``[..., n_vars * n_vars]``
 
         Returns:
-            matrix of shape [..., d, d]
+            matrix of shape ``[..., d, d]``
         """
         return z.reshape(*z.shape[:-1], n_vars, n_vars)
 
 
     def mat_to_vec(self, w):
         """
-        Reshapes latent adjacency matrix form to particle
-            last two dims get flattened into vector
+        Reshapes latent adjacency matrix form to particle. Last two dims get flattened into vector
         
         Args:
-            w: matrix of shape [..., d, d]
+            w (ndarray): matrix of shape ``[..., d, d]``
         
         Returns:
-            flattened matrix of shape [..., d * d]
+            flattened matrix of shape ``[..., d * d]``
         """
         n_vars = w.shape[-1]
         return w.reshape(*w.shape[:-2], n_vars * n_vars)
@@ -87,13 +106,13 @@ class DiBS:
 
     def particle_to_g_lim(self, z):
         """
-        Returns g corresponding to alpha = infinity for particles `z`
+        Returns :math:`G` corresponding to :math:`\\alpha = \\infty` for particles `z`
 
         Args:
-            z: latent variables [..., d, k, 2]
+            z (ndarray): latent variables ``[..., d, k, 2]``
 
         Returns:
-            graph adjacency matrices of shape [..., d, d]
+            graph adjacency matrices of shape ``[..., d, d]``
         """
         u, v = z[..., 0], z[..., 1]
         scores = jnp.einsum('...ik,...jk->...ij', u, v)
@@ -109,12 +128,12 @@ class DiBS:
         Sample Bernoulli matrix according to matrix of probabilities
 
         Args:
-            p: matrix of probabilities [d, d]
-            n_samples: number of samples
-            subk: rng key
+            p (ndarray): matrix of probabilities ``[d, d]``
+            n_samples (int): number of samples
+            subk (ndarray): rng key
         
         Returns:
-            an array of matrices sampled according to `p` of shape [n_samples, d, d]
+            an array of matrices sampled according to ``p`` of shape ``[n_samples, d, d]``
         """
         n_vars = p.shape[-1]
         g_samples = self.vec_to_mat(random.bernoulli(
@@ -127,12 +146,12 @@ class DiBS:
 
     def particle_to_soft_graph(self, z, eps, t):
         """ 
-        Gumbel-softmax / concrete distribution using Logistic(0,1) samples `eps`
+        Gumbel-softmax / concrete distribution using Logistic(0,1) samples ``eps``
 
         Args:
-            z: a single latent tensor Z of shape [d, k, 2]
-            eps: random iid Logistic(0,1) noise  of shape [d, d] 
-            t: step
+            z (ndarray): a single latent tensor :math:`Z` of shape ``[d, k, 2]```
+            eps (ndarray): random i.i.d. Logistic(0,1) noise  of shape ``[d, d]``
+            t (int): step
         
         Returns:
             Gumbel-softmax sample of adjacency matrix [d, d]
@@ -151,15 +170,15 @@ class DiBS:
 
     def particle_to_hard_graph(self, z, eps, t):
         """ 
-        Bernoulli sample of G using probabilities implied by z
+        Bernoulli sample of :math:`G` using probabilities implied by latent ``z``
 
         Args:
-            z: a single latent tensor [d, k, 2]
-            eps: random iid Logistic(0,1) noise  of shape [d, d] 
-            t: step
+            z (ndarray): a single latent tensor :math:`Z` of shape ``[d, k, 2]``
+            eps (ndarray): random i.i.d. Logistic(0,1) noise  of shape ``[d, d] ``
+            t (int): step
         
         Returns:
-            Gumbel-max (hard) sample of adjacency matrix [d, d]
+            Gumbel-max (hard) sample of adjacency matrix ``[d, d]``
         """
         scores = jnp.einsum('...ik,...jk->...ij', z[..., 0], z[..., 1])
 
@@ -181,11 +200,11 @@ class DiBS:
         Edge probabilities encoded by latent representation 
 
         Args:
-            z: latent tensors Z [..., d, k, 2]
-            t: step
+            z (ndarray): latent tensors :math:`Z`  ``[..., d, k, 2]``
+            t (int): step
         
         Returns:
-            edge probabilities of shape [..., d, d]
+            edge probabilities of shape ``[..., d, d]``
         """
         u, v = z[..., 0], z[..., 1]
         scores = jnp.einsum('...ik,...jk->...ij', u, v)
@@ -201,11 +220,11 @@ class DiBS:
         Edge log probabilities encoded by latent representation
 
         Args:
-            z: latent tensors Z [..., d, k, 2]
-            t: step
+            z (ndarray): latent tensors :math:`Z` ``[..., d, k, 2]``
+            t (int): step
 
         Returns:
-            tuple of tensors [..., d, d], [..., d, d] corresponding to log(p) and log(1-p)
+            tuple of tensors ``[..., d, d], [..., d, d]`` corresponding to ``log(p)`` and ``log(1-p)``
         """
         u, v = z[..., 0], z[..., 1]
         scores = jnp.einsum('...ik,...jk->...ij', u, v)
@@ -224,12 +243,12 @@ class DiBS:
         Log likelihood of generative graph model
 
         Args:
-            single_g: single graph adjacency matrix [d, d]    
-            single_z: single latent tensor [d, k, 2]
-            t: step
+            single_g (ndarray): single graph adjacency matrix ``[d, d]``
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            t (int): step
         
         Returns:
-            log likelihood log p(G | Z) of shape [1,]
+            log likelihood :math:`log p(G | Z)` of shape ``[1,]``
         """
         # [d, d], [d, d]
         log_p, log_1_p = self.edge_log_probs(single_z, t)
@@ -245,17 +264,17 @@ class DiBS:
 
     def eltwise_grad_latent_log_prob(self, gs, single_z, t):
         """
-        Gradient of log likelihood of generative graph model w.r.t. Z
-        i.e. d/dz log p(G | Z) 
-        Batched over samples of G given a single Z.
+        Gradient of log likelihood of generative graph model w.r.t. :math:`Z`
+        i.e. :math:`\\nabla_Z \\log p(G | Z)`
+        Batched over samples of :math:`G` given a single :math:`Z`.
 
         Args:
-            gs: batch of graph matrices [n_graphs, d, d]
-            single_z: latent variable [d, k, 2] 
-            t: step
+            gs (ndarray): batch of graph matrices ``[n_graphs, d, d]``
+            single_z (ndarray): latent variable ``[d, k, 2]``
+            t (int): step
 
         Returns:
-            batch of gradients of shape [n_graphs, d, k, 2]
+            batch of gradients of shape ``[n_graphs, d, k, 2]``
         """
         dz_latent_log_prob = grad(self.latent_log_prob, 1)
         return vmap(dz_latent_log_prob, (0, None, None), 0)(gs, single_z, t)
@@ -268,15 +287,15 @@ class DiBS:
 
     def eltwise_log_joint_prob(self, gs, single_theta, rng):
         """
-        log p(theta, D | G) batched over samples of G
+        Joint likelihood :math:`\\log p(\\Theta, D | G)` batched over samples of :math:`G`
 
         Args:
-            gs: batch of graphs [n_graphs, d, d]
-            single_theta: single parameter PyTree
-            rng:  [1, ] for mini-batching `x` potentially
+            gs (ndarray): batch of graphs ``[n_graphs, d, d]``
+            single_theta (Any): single parameter PyTree
+            rng (ndarray): for mini-batching ``x`` potentially
 
         Returns:
-            batch of logprobs [n_graphs, ]
+            batch of logprobs of shape ``[n_graphs, ]``
         """
 
         return vmap(self.log_joint_prob, (0, None, None, None), 0)(gs, single_theta, self.x, rng)
@@ -285,20 +304,18 @@ class DiBS:
 
     def log_joint_prob_soft(self, single_z, single_theta, eps, t, subk):
         """
-        This is the composition of 
-            log p(theta, D | G) 
-        and
-            G(Z, U)  (Gumbel-softmax graph sample given Z)
+        This is the composition of :math:`\\log p(\\Theta, D | G) `
+        and :math:`G(Z, U)`  (Gumbel-softmax graph sample given :math:`Z`)
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            single_theta: single parameter PyTree
-            eps: i.i.d Logistic noise of shpae [d, d] 
-            t: step 
-            subk: rng key
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            single_theta (Any): single parameter PyTree
+            eps (ndarray): i.i.d Logistic noise of shape ``[d, d]``
+            t (int): step
+            subk (ndarray): rng key
 
         Returns:
-            logprob of shape [1, ]
+            logprob of shape ``[1, ]``
 
         """
         soft_g_sample = self.particle_to_soft_graph(single_z, eps, t)
@@ -312,20 +329,17 @@ class DiBS:
 
     def eltwise_grad_z_likelihood(self,  zs, thetas, baselines, t, subkeys):
         """
-        Computes batch of estimators for score
-            
-            d/dZ log p(theta, D | Z) 
-
-        Selects corresponding estimator used for the term `d/dZ E_p(G|Z)[ p(theta, D | G) ]`
+        Computes batch of estimators for score :math:`\\nabla_Z \\log p(\\Theta, D | Z)`
+        Selects corresponding estimator used for the term :math:`\\nabla_Z E_{p(G|Z)}[ p(\\Theta, D | G) ]`
         and executes it in batch.
 
         Args:
-            zs: batch of latent tensors Z [n_particles, d, k, 2]
-            thetas: batch of parameters PyTree with `n_particles` as leading dim
-            baselines: array of score function baseline values of shape [n_particles, ]
+            zs (ndarray): batch of latent tensors :math:`Z` ``[n_particles, d, k, 2]``
+            thetas (Any): batch of parameters PyTree with ``n_particles`` as leading dim
+            baselines (ndarray): array of score function baseline values of shape ``[n_particles, ]``
 
         Returns:
-            tuple: batch of (gradient estimates, baselines) of shapes [n_particles, d, k, 2], [n_particles, ]        
+            tuple batch of (gradient estimates, baselines) of shapes ``[n_particles, d, k, 2], [n_particles, ]``
         """
 
         # select the chosen gradient estimator
@@ -345,22 +359,21 @@ class DiBS:
 
     def grad_z_likelihood_score_function(self, single_z, single_theta, single_sf_baseline, t, subk):
         """
-        Score function estimator (aka REINFORCE) for the score
+        Score function estimator (aka REINFORCE) for the score :math:`\\nabla_Z \\log p(\\Theta, D | Z)`
+        Uses the same :math:`G \\sim p(G | Z)` samples for expectations in numerator and denominator.
 
-            d/dZ log p(theta, D | Z) 
-
-        This does not use d/dG log p(theta, D | G) and is hence applicable when not defined.
-        Uses same G samples for expectations in numerator and denominator.
+        This does not use :math:`\\nabla_G \\log p(\\Theta, D | G)` and is hence applicable when
+        the gradient w.r.t. the adjacency matrix is not defined (as e.g. for the BGe score).
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            single_theta: single parameter PyTree
-            single_sf_baseline: [1, ]
-            t: step
-            subk: rng key
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            single_theta (Any): single parameter PyTree
+            single_sf_baseline (ndarray): ``[1, ]``
+            t (int): step
+            subk (ndarray): rng key
         
         Returns:
-            tuple gradient, baseline  [d, k, 2], [1, ]
+            tuple of gradient, baseline  ``[d, k, 2], [1, ]``
 
         """
 
@@ -416,20 +429,30 @@ class DiBS:
 
     def grad_z_likelihood_gumbel(self, single_z, single_theta, single_sf_baseline, t, subk):
         """
-        Reparameterization estimator for the score
+        Reparameterization estimator for the score  :math:`\\nabla_Z \\log p(\\Theta, D | Z)`
+        sing the Gumbel-softmax / concrete distribution reparameterization trick.
+        Uses the same :math:`G \\sim p(G | Z)` samples for expectations in numerator and denominator.
 
-            d/dZ log p(theta, D | Z) 
-            
-        Using the Gumbel-softmax / concrete distribution reparameterization trick.
-        Uses same G samples for expectations in numerator and denominator.
+        This **does** require a well-defined gradient
+        :math:`\\nabla_G \\log p(\\Theta, D | G)` and is hence not applicable when
+        the gradient w.r.t. the adjacency matrix is not defined for Gumbel-relaxations
+        of the discrete adjacency matrix.
+        Any (marginal) likelihood expressible as a function of ``g[:, j]`` and ``theta`` ,
+        e.g. using the vector of (possibly soft) parent indicators as a mask, satisfies this.
+
+        Examples are: ``dibs.models.LinearGaussian`` and ``dibs.models.DenseNonlinearGaussian``
+        See also e.g. http://proceedings.mlr.press/v108/zheng20a/zheng20a.pdf
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            single_theta: single parameter PyTree
-            single_sf_baseline: [1, ]
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            single_theta (Any): single parameter PyTree
+            single_sf_baseline (ndarray): ``[1, ]``
+            t (int): step
+            subk (ndarray): rng key
 
         Returns:
-            tuple: gradient, baseline of shape [d, k, 2], [1, ]
+            tuple of gradient, baseline  ``[d, k, 2], [1, ]``
+
 
         """   
         n_vars = single_z.shape[0]
@@ -478,21 +501,20 @@ class DiBS:
 
     def eltwise_grad_theta_likelihood(self, zs, thetas, t, subk):
         """
-        Computes batch of estimators for the score
-            
-            d/dtheta log p(theta, D | Z) 
+        Computes batch of estimators for the score   :math:`\\nabla_{\\Theta} \\log p(\\Theta, D | Z)`,
+        i.e. w.r.t the conditional distribution parameters.
+        Uses the same :math:`G \\sim p(G | Z)` samples for expectations in numerator and denominator.
 
-        (i.e. w.r.t the conditional distribution parameters)
-
-        This does not use d/dG log p(theta, D | G) and is hence applicable when not defined.
-        Analogous to `eltwise_grad_z_likelihood` but w.r.t theta
+        This does not use :math:`\\nabla_G \\log p(\\Theta, D | G)` and is hence applicable when
+        the gradient w.r.t. the adjacency matrix is not defined (as e.g. for the BGe score).
+        Analogous to ``eltwise_grad_z_likelihood`` but gradient w.r.t :math:`\\Theta` instead of :math:`Z`
 
         Args:
-            zs: batch of latent tensors Z [n_particles, d, k, 2]
-            thetas: batch of parameter PyTree with `n_mc_samples` as leading dim
+            zs (ndarray): batch of latent tensors Z of shape ``[n_particles, d, k, 2]``
+            thetas (Any): batch of parameter PyTree with ``n_mc_samples`` as leading dim
 
         Returns:
-            batch of gradients in form of PyTree with `n_particles` as leading dim     
+            batch of gradients in form of ``thetas`` PyTree with ``n_particles`` as leading dim
 
         """
         return vmap(self.grad_theta_likelihood, (0, 0, None, None), 0)(zs, thetas, t, subk)
@@ -500,18 +522,16 @@ class DiBS:
 
     def grad_theta_likelihood(self, single_z, single_theta, t, subk):
         """
-        Computes Monte Carlo estimator for the score 
-            
-            d/dtheta log p(theta, D | Z) 
+        Computes Monte Carlo estimator for the score  :math:`\\nabla_{\\Theta} \\log p(\\Theta, D | Z)`
 
-        Uses hard samples of G; reparameterization like for d/dZ is also possible
-        Uses same G samples for expectations in numerator and denominator.
+        Uses hard samples of :math:`G`, but a soft reparameterization like for :math:`\\nabla_Z` is also possible.
+        Uses the same :math:`G \\sim p(G | Z)` samples for expectations in numerator and denominator.
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            single_theta: single parameter PyTree
-            t: step
-            subk: rng key
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            single_theta (Any): single parameter PyTree
+            t (int): step
+            subk (ndarray): rng key
 
         Returns:
             parameter gradient PyTree
@@ -574,12 +594,12 @@ class DiBS:
         Gumbel-softmax instead of Bernoulli samples
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            single_eps: i.i.d. Logistic noise of shape [d, d] for Gumbel-softmax
-            t: step
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            single_eps (ndarray): i.i.d. Logistic noise of shape ``[d, d``] for Gumbel-softmax
+            t (int): step
         
         Returns:
-            constraint value of shape [1,]
+            constraint value of shape ``[1,]``
         """
         n_vars = single_z.shape[0]
         G = self.particle_to_soft_graph(single_z, single_eps, t)
@@ -589,19 +609,19 @@ class DiBS:
 
     def grad_constraint_gumbel(self, single_z, key, t):
         """
-        Reparameterization estimator for the gradient
+        Reparameterization estimator for the gradient :math:`\\nabla_Z E_{p(G|Z)} [ h(G) ]`
+        where :math:`h` is the acyclicity constraint penalty function.
 
-           d/dZ E_p(G|Z) [constraint(G)]
-            
-        Using the Gumbel-softmax / concrete distribution reparameterization trick.
+        Since :math:`h` is differentiable w.r.t. :math:`G`, always uses
+        the Gumbel-softmax / concrete distribution reparameterization trick.
 
         Args:
-            z: single latent tensor [d, k, 2]                
-            key: rng key [1,]    
-            t: step
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            key (ndarray): rng
+            t (int): step
 
-        Returns         
-            gradient of constraint [d, k, 2] 
+        Returns:
+            gradient of shape ``[d, k, 2]``
         """
         n_vars = single_z.shape[0]
         
@@ -617,15 +637,18 @@ class DiBS:
 
     def log_graph_prior_particle(self, single_z, t):
         """
-        log p(Z) approx. log p(G) via edge probabilities
+        Computes :math:`\\log p(G)` component of :math:`\\log p(Z)`,
+        i.e. not the contraint or Gaussian prior term, but the DAG belief.
+
+        The log prior :math:`\\log p(G)` is evaluated with
+        edge probabilities :math:`G_{\\alpha}(Z)` given :math:`Z`.
 
         Args:
-            single_z: single latent tensor [d, k, 2]
-            t: step
+            single_z (ndarray): single latent tensor ``[d, k, 2]``
+            t (int): step
 
         Returns:
-            log prior graph probability [1,] log p(G) evaluated with G_\alpha(Z)
-                i.e. with the edge probabilities   
+            log prior graph probability`\\log p(G_{\\alpha}(Z))`  of shape ``[1,]``
         """
         # [d, d] # masking is done inside `edge_probs`
         single_soft_g = self.edge_probs(single_z, t)
@@ -636,22 +659,20 @@ class DiBS:
 
     def eltwise_grad_latent_prior(self, zs, subkeys, t):
         """
-        Computes batch of estimators for the score
+        Computes batch of estimators for the score :math:`\\nabla_Z \\log p(Z)`
+        with
 
-            d/dZ log p(Z)
-        
-        where log p(Z) = - beta(t) E_p(G|Z) [constraint(G)]
-                         + log Gaussian(Z)
-                         + log f(Z) 
-        
-        and f(Z) is an additional prior factor.
+        :math:`\\log p(Z) = - \\beta(t) E_{p(G|Z)} [h(G)] + \\log \\mathcal{N}(Z) + \\log f(Z)`
+
+        where :math:`h` is the acyclicity constraint and `f(Z)` is additional DAG prior factor
+        computed inside ``dibs.inference.DiBS.log_graph_prior_particle``.
 
         Args:
-            zs: single latent tensor  [n_particles, d, k, 2]
-            subkeys: batch of rng keys [n_particles, ...]
+            zs (ndarray): single latent tensor  ``[n_particles, d, k, 2]``
+            subkeys (ndarray): batch of rng keys ``[n_particles, ...]``
 
         Returns:
-            batch of gradients of shape [n_particles, d, k, 2]
+            batch of gradients of shape ``[n_particles, d, k, 2]``
 
         """
 
@@ -673,9 +694,13 @@ class DiBS:
 
     def visualize_callback(self, ipython=True, save_path=None):
         """Returns callback function for visualization of particles during inference updates
-        Arguments:
-            ipython (bool): set to `True` when running in a jupyter notebook
+
+        Args:
+            ipython (bool): set to ``True`` when running in a jupyter notebook
             save_path (str): path to save plotted images to
+
+        Returns:
+            callback
         """
 
         from dibs.utils.visualize import visualize

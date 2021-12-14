@@ -19,7 +19,7 @@ class BGe:
         Geiger et al (2002):  https://projecteuclid.org/download/pdf_1/euclid.aos/1035844981
         Kuipers et al (2014): https://projecteuclid.org/download/suppdf_1/euclid.aos/1407420013
 
-    Assumes the commonly-sued default diagonal parameter matrix T
+    Assumes the commonly-used default diagonal parameter matrix T
 
     Inspiration for implementation was drawn from
     https://bitbucket.org/jamescussens/pygobnilp/src/master/pygobnilp/scoring.py

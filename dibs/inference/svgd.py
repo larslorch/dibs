@@ -21,43 +21,59 @@ from dibs.utils.func import expand_by
 
 class MarginalDiBS(DiBS):
     """
-    This class implements DiBS: Differentiable Bayesian Structure Learning (Lorch et al., 2021)
-    instantiated using Stein Variational Gradient Descent (SVGD) (Liu and Wang, 2016) as the underlying inference method.
-    An SVGD update of vector v is defined as
+    This class implements Stein Variational Gradient Descent (SVGD) (Liu and Wang, 2016)
+    for DiBS inference (Lorch et al., 2021) of the marginal DAG posterior :math:`p(G | D)`.
+    For joint inference of :math:`p(G, \\Theta | D)`, use the analogous class
+    :class:`~dibs.inference.JointDiBS`.
 
-        phi(v) = 1/n_particles sum_u k(v, u) d/du log p(u) + d/du k(u, v)
+    An SVGD update of tensor :math:`v` is defined as
 
-    This class implements //marginal// inference of the posterior p(G | D).
-    For joint inference of p(G, theta | D), use the class `JointDiBS`
+    :math:`\\phi(v) \\propto \\sum_{u} k(v, u) \\nabla_u \\log p(u) + \\nabla_u k(u, v)`
 
     Args:
-        x: observations of shape [n_observations, n_vars]
-        inference_model: Bayes net inference model defining prior and marginal likelihood underlying the inferred posterior
-
-        kernel: class of kernel with differentiable evaluation function `eval`
-        kernel_param: kwargs to instantiate `kernel`
-        optimizer: optimizer identifier str
-        optimizer_param: kwargs to instantiate `optimizer`
-
-        alpha_linear (float): inverse temperature parameter schedule of sigmoid
-        beta_linear (float): inverse temperature parameter schedule of acyclicity prior
-        tau (float): Gumbel-softmax relaxation temperature
-
-        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator for likelihood term p(theta, D | G)
-        n_acyclicity_mc_samples (int): number of Monte Carlo samples in gradient estimator of acyclicity prior
-        grad_estimator_z (str): gradient estimator d/dZ of expectation; choices: `score` or `reparam`
-        score_function_baseline (float): weight of addition in score function estimator baseline
-        latent_prior_std (float): standard deviation of Gaussian prior over Z; defaults to 1/sqrt(k)
-
+        x (ndarray): observations of shape ``[n_observations, n_vars]``
+        inference_model: Bayes net inference model defining prior :math:`\\log p(G)`
+            and marginal likelihood :math:`\\log p(D | G)`` underlying the inferred posterior.
+            Object *has to implement two methods*:
+            ``log_graph_prior`` and ``observational_log_marginal_prob``.
+            Example: :class:`~dibs.models.BGe`
+        kernel: Class of kernel. *Has to implement the method* ``eval(u, v)``.
+            Example: :class:`~dibs.kernel.AdditiveFrobeniusSEKernel`
+        kernel_param (dict): kwargs to instantiate ``kernel``
+        optimizer (str): optimizer identifier
+        optimizer_param (dict): kwargs to instantiate ``optimizer``
+        alpha_linear (float): slope of of linear schedule for inverse temperature :math:`\\alpha`
+            of sigmoid in latent graph model :math:`p(G | Z)`
+        beta_linear (float):  slope of of linear schedule for inverse temperature :math:`\\beta`
+            of constraint penalty in latent prior :math:`p(Z)`
+        tau (float):  constant Gumbel-softmax temperature parameter
+        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator
+            for likelihood term :math:`p(\Theta, D | G)`
+        n_acyclicity_mc_samples (int):  number of Monte Carlo samples in gradient estimator
+            for acyclicity constraint
+        grad_estimator_z (str): gradient estimator :math:`\\nabla_Z` of expectation over :math:`p(G | Z)`;
+            choices: ``score`` or ``reparam``
+        score_function_baseline (float): scale of additive baseline in score function (REINFORCE) estimator;
+            ``score_function_baseline == 0.0`` corresponds to not using a baseline
+        latent_prior_std (float): standard deviation of Gaussian prior over :math:`Z`; defaults to ``1/sqrt(k)``
     """
 
-    def __init__(self, *, x, inference_model,
-                 kernel=AdditiveFrobeniusSEKernel, kernel_param=None,
-                 optimizer="rmsprop", optimizer_param=None,
-                 alpha_linear=1.0, beta_linear=1.0, tau=1.0,
-                 n_grad_mc_samples=128, n_acyclicity_mc_samples=32,
-                 grad_estimator_z="score", score_function_baseline=0.0,
-                 latent_prior_std=None, verbose=False):
+    def __init__(self, *,
+                 x,
+                 inference_model,
+                 kernel=AdditiveFrobeniusSEKernel,
+                 kernel_param=None,
+                 optimizer="rmsprop",
+                 optimizer_param=None,
+                 alpha_linear=1.0,
+                 beta_linear=1.0,
+                 tau=1.0,
+                 n_grad_mc_samples=128,
+                 n_acyclicity_mc_samples=32,
+                 grad_estimator_z="score",
+                 score_function_baseline=0.0,
+                 latent_prior_std=None,
+                 verbose=False):
 
         # handle mutable default args
         if kernel_param is None:
@@ -83,8 +99,7 @@ class MarginalDiBS(DiBS):
 
         self.inference_model = inference_model
         self.eltwise_log_marginal_likelihood = vmap(lambda g, x_ho:
-                                                    inference_model.observational_log_marginal_prob(g, None, x_ho,
-                                                                                                    None), (0, None), 0)
+            inference_model.observational_log_marginal_prob(g, None, x_ho, None), (0, None), 0)
 
         self.kernel = kernel(**kernel_param)
 
@@ -95,17 +110,18 @@ class MarginalDiBS(DiBS):
         else:
             raise ValueError()
 
+
     def _sample_initial_random_particles(self, *, key, n_particles, n_dim=None):
         """
         Samples random particles to initialize SVGD
 
         Args:
-            key: rng key
-            n_particles: number of particles inferred
-            n_dim: size of latent dimension `k`. Defaults to `n_vars`, s.t. k == d
+            key (ndarray): rng key
+            n_particles (int): number of particles inferred
+            n_dim (int): size of latent dimension :math:`k`. Defaults to ``n_vars``, s.t. :math:`k = d`
 
         Returns:
-            z: batch of latent tensors [n_particles, d, k, 2]
+            batch of latent tensors ``[n_particles, d, k, 2]``
         """
         # default full rank
         if n_dim is None:
@@ -120,59 +136,64 @@ class MarginalDiBS(DiBS):
 
         return z
 
+
     def _f_kernel(self, x_latent, y_latent):
         """
         Evaluates kernel
 
         Args:
-            x_latent: latent tensor [d, k, 2]
-            y_latent: latent tensor [d, k, 2]
+            x_latent (ndarray): latent tensor of shape ``[d, k, 2]``
+            y_latent (ndarray): latent tensor of shape ``[d, k, 2]``
 
         Returns:
-            [1, ] kernel value
+            kernel value of shape ``[1, ]``
         """
         return self.kernel.eval(x=x_latent, y=y_latent)
+
 
     def _f_kernel_mat(self, x_latents, y_latents):
         """
         Computes pairwise kernel matrix
 
         Args:
-            x_latents: latent tensor [A, d, k, 2]
-            y_latents: latent tensor [B, d, k, 2]
+            x_latents (ndarray): latent tensor of shape ``[A, d, k, 2]``
+            y_latents (ndarray): latent tensor of shape ``[B, d, k, 2]``
 
         Returns:
-            [A, B] kernel values
+            kernel values of shape ``[A, B]``
         """
         return vmap(vmap(self._f_kernel, (None, 0), 0), (0, None), 0)(x_latents, y_latents)
 
+
     def _eltwise_grad_kernel_z(self, x_latents, y_latent):
         """
-        Computes gradient d/dz k(z, z') elementwise for each provided particle z
+        Computes gradient :math:`\\nabla_Z k(Z, Z')` elementwise for each provided particle :math:`Z`
+        in batch ``x_latents`
 
         Args:
-            x_latents: batch of latent particles [n_particles, d, k, 2]
-            y_latent: single latent particle [d, k, 2] (z')
+            x_latents (ndarray): batch of latent particles for :math:`Z` of shape ``[n_particles, d, k, 2]``
+            y_latent (ndarray): single latent particle :math:`Z'` ``[d, k, 2]``
 
         Returns:
-            batch of gradients for latent tensors Z [n_particles, d, k, 2]
+            batch of gradients of shape ``[n_particles, d, k, 2]``
         """
         grad_kernel_z = grad(self._f_kernel, 0)
         return vmap(grad_kernel_z, (0, None), 0)(x_latents, y_latent)
 
     def _z_update(self, single_z, kxx, z, grad_log_prob_z):
         """
-        Computes SVGD update for `single_z` particlee given the kernel values
-        `kxx` and the d/dz gradients of the target density for each of the available particles
+        Computes SVGD update for ``single_z`` particle given the kernel values
+        ``kxx`` and the :math:`d/dZ` gradients of the target density for each of the available particles
 
         Args:
-            single_z: single latent tensor Z [d, k, 2], which is the Z particle being updated
-            kxx: pairwise kernel values for all particles [n_particles, n_particles]
-            z:  all latent tensor Z particles [n_particles, d, k, 2]
-            grad_log_prob_z: gradients of all Z particles w.r.t target density  [n_particles, d, k, 2]
+            single_z (ndarray): single latent tensor ``[d, k, 2]``, which is the Z particle being updated
+            kxx (ndarray): pairwise kernel values for all particles ``[n_particles, n_particles]``
+            z (ndarray):  all latent particles ``[n_particles, d, k, 2]``
+            grad_log_prob_z (ndarray): gradients of all Z particles w.r.t
+                target density of shape ``[n_particles, d, k, 2]``
 
         Returns
-            transform vector of shape [d, k, 2] for the Z particle being updated
+            transform vector of shape ``[d, k, 2]`` for the particle ``single_z``
 
         """
 
@@ -185,23 +206,25 @@ class MarginalDiBS(DiBS):
 
     def _parallel_update_z(self, *args):
         """
-        Parallelizes `z_update` for all available particles
-        Otherwise, same inputs as `z_update`.
+        Vectorizes :func:`~dibs.inference.MarginalDiBS._z_update`
+        for all available particles in batched first input dim (``single_z``)
+        Otherwise, same inputs as :func:`~dibs.inference.MarginalDiBS._z_update`.
         """
         return vmap(self._z_update, (0, 1, None, None), 0)(*args)
 
     def _svgd_step(self, t, opt_state_z, key, sf_baseline):
         """
-        Performs a single SVGD step in the DiBS framework, updating all Z particles jointly.
+        Performs a single SVGD step in the DiBS framework, updating all :math:`Z` particles jointly.
 
         Args:
-            t: step
-            opt_state_z: optimizer state for latent Z particles; contains [n_particles, d, k, 2]
-            key: prng key
-            sf_baseline: batch of baseline values in case score function gradient is used [n_particles, ]
+            t (int): step
+            opt_state_z: optimizer state for latent :math:`Z` particles; contains ``[n_particles, d, k, 2]``
+            key (ndarray): prng key
+            sf_baseline (ndarray): batch of baseline values of shape ``[n_particles, ]``
+                in case score function gradient is used
 
         Returns:
-            the updated inputs
+            the updated inputs ``opt_state_z``, ``key``, ``sf_baseline``
         """
 
         z = self.get_params(opt_state_z)  # [n_particles, d, k, 2]
@@ -239,19 +262,20 @@ class MarginalDiBS(DiBS):
 
     def sample(self, *, key, n_particles, steps, n_dim_particles=None, callback=None, callback_every=None):
         """
-        Use SVGD to sample `n_particles` particles G from the marginal posterior p(G | D) as
-        defined by the BN model `self.inference_model`
+        Use SVGD with DiBS to sample ``n_particles`` particles :math:`G` from the marginal posterior
+        :math:`p(G | D)` as defined by the BN model ``self.inference_model``
 
         Arguments:
-            key: prng key
+            key (ndarray): prng key
             n_particles (int): number of particles to sample
             steps (int): number of SVGD steps performed
-            n_dim_particles (int): latent dimensionality k of particles Z; default is `n_vars`
-            callback: function to be called every `callback_every` steps of SVGD.
-            callback_every: if `None`, `callback` is only called after particle updates have finished
+            n_dim_particles (int): latent dimensionality :math:`k` of particles :math:`Z = \{ U, V \}`
+                with :math:`U, V \\in \\mathbb{R}^{k \\times d}`. Default is ``n_vars``
+            callback: function to be called every ``callback_every`` steps of SVGD.
+            callback_every: if ``None``, ``callback`` is only called after particle updates have finished
 
         Returns:
-            particles_g: [n_particles, n_vars, n_vars]
+            batch of samples :math:`G \\sim p(G | D)` of shape ``[n_particles, n_vars, n_vars]``
 
         """
 
@@ -297,13 +321,15 @@ class MarginalDiBS(DiBS):
 
     def get_empirical(self, g):
         """
-        Converts batch of binary (adjacency) matrices into empirical particle distribution
+        Converts batch of binary (adjacency) matrices into *empirical* particle distribution
+        where mixture weights correspond to counts/occurrences
 
         Args:
-            g: [N, d, d] with {0,1} values
+            g (ndarray): batch of graph samples ``[n_particles, d, d]`` with binary values
 
         Returns:
-            ParticleDistribution
+            :class:`~dibs.metrics.ParticleDistribution`:
+            particle distribution of graph samples and associated log probabilities
         """
         N, _, _ = g.shape
         unique, counts = onp.unique(g, axis=0, return_counts=True)
@@ -315,14 +341,15 @@ class MarginalDiBS(DiBS):
 
     def get_mixture(self, g):
         """
-        Converts batch of binary (adjacency) matrices into mixture particle distribution,
+        Converts batch of binary (adjacency) matrices into *mixture* particle distribution,
         where mixture weights correspond to unnormalized target (i.e. posterior) probabilities
 
         Args:
-           g: [N, d, d] with {0,1} values
+            g (ndarray): batch of graph samples ``[n_particles, d, d]`` with binary values
 
         Returns:
-           ParticleDistribution
+            :class:`~dibs.metrics.ParticleDistribution`:
+            particle distribution of graph samples and associated log probabilities
 
         """
 
@@ -340,43 +367,60 @@ class MarginalDiBS(DiBS):
 
 class JointDiBS(DiBS):
     """
-    This class implements DiBS: Differentiable Bayesian Structure Learning (Lorch et al., 2021)
-    instantiated using Stein Variational Gradient Descent (SVGD) (Liu and Wang, 2016) as the underlying inference method.
-    An SVGD update of vector v is defined as
+    This class implements Stein Variational Gradient Descent (SVGD) (Liu and Wang, 2016)
+    for DiBS inference (Lorch et al., 2021) of the marginal DAG posterior :math:`p(G | D)`.
+    For marginal inference of :math:`p(G | D)`, use the analogous class
+    :class:`~dibs.inference.MarginalDiBS`.
 
-        phi(v) = 1/n_particles sum_u k(v, u) d/du log p(u) + d/du k(u, v)
-        
-    This class implements //joint// inference of the posterior p(G, theta | D).
-    For marginal inference of p(G | D), use the class `MarginalDiBS`
+    An SVGD update of tensor :math:`v` is defined as
+
+    :math:`\\phi(v) \\propto \\sum_{u} k(v, u) \\nabla_u \\log p(u) + \\nabla_u k(u, v)`
 
     Args:
-        x: observations of shape [n_observations, n_vars]
-        inference_model: Bayes net inference model defining prior and likelihood underlying the inferred posterior
-
-        kernel: class of kernel with differentiable evaluation function `eval`
-        kernel_param: kwargs to instantiate `kernel`
-        optimizer: optimizer identifier str
-        optimizer_param: kwargs to instantiate `optimizer`
-
-        alpha_linear (float): inverse temperature parameter schedule of sigmoid
-        beta_linear (float): inverse temperature parameter schedule of acyclicity prior
-        tau (float): Gumbel-softmax relaxation temperature
-
-        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator for likelihood term p(theta, D | G)
-        n_acyclicity_mc_samples (int): number of Monte Carlo samples in gradient estimator of acyclicity prior
-        grad_estimator_z (str): gradient estimator d/dZ of expectation; choices: `score` or `reparam`
-        score_function_baseline (float): weight of addition in score function estimator baseline
-        latent_prior_std (float): standard deviation of Gaussian prior over Z; defaults to 1/sqrt(k)
+        x (ndarray): observations of shape ``[n_observations, n_vars]``
+        inference_model: Bayes net inference model defining prior :math:`\\log p(G)`
+            and joint likelihood :math:`\\log p(\\Theta, D | G) = \\log p(\\Theta | G) + \\log p(D | G, \\Theta``
+            underlying the inferred posterior. Object *has to implement two methods*:
+            ``log_graph_prior`` and ``observational_log_joint_prob``.
+            Example: :class:`~dibs.models.LinearGaussian`
+        kernel: Class of kernel. *Has to implement the method* ``eval(u, v)``.
+            Example: :class:`~dibs.kernel.JointAdditiveFrobeniusSEKernel`
+        kernel_param (dict): kwargs to instantiate ``kernel``
+        optimizer (str): optimizer identifier
+        optimizer_param (dict): kwargs to instantiate ``optimizer``
+        alpha_linear (float): slope of of linear schedule for inverse temperature :math:`\\alpha`
+            of sigmoid in latent graph model :math:`p(G | Z)`
+        beta_linear (float):  slope of of linear schedule for inverse temperature :math:`\\beta`
+            of constraint penalty in latent prior :math:`p(Z)`
+        tau (float):  constant Gumbel-softmax temperature parameter
+        n_grad_mc_samples (int): number of Monte Carlo samples in gradient estimator
+            for likelihood term :math:`p(\Theta, D | G)`
+        n_acyclicity_mc_samples (int):  number of Monte Carlo samples in gradient estimator
+            for acyclicity constraint
+        grad_estimator_z (str): gradient estimator :math:`\\nabla_Z` of expectation over :math:`p(G | Z)`;
+            choices: ``score`` or ``reparam``
+        score_function_baseline (float): scale of additive baseline in score function (REINFORCE) estimator;
+            ``score_function_baseline == 0.0`` corresponds to not using a baseline
+        latent_prior_std (float): standard deviation of Gaussian prior over :math:`Z`; defaults to ``1/sqrt(k)``
 
     """
 
-    def __init__(self, *, x, inference_model,
-                 kernel=JointAdditiveFrobeniusSEKernel, kernel_param=None,
-                 optimizer="rmsprop", optimizer_param=None,
-                 alpha_linear=0.05, beta_linear=1.0, tau=1.0,
-                 n_grad_mc_samples=128, n_acyclicity_mc_samples=32,
-                 grad_estimator_z="reparam", score_function_baseline=0.0,
-                 latent_prior_std=None, verbose=False):
+    def __init__(self, *,
+                 x,
+                 inference_model,
+                 kernel=JointAdditiveFrobeniusSEKernel,
+                 kernel_param=None,
+                 optimizer="rmsprop",
+                 optimizer_param=None,
+                 alpha_linear=0.05,
+                 beta_linear=1.0,
+                 tau=1.0,
+                 n_grad_mc_samples=128,
+                 n_acyclicity_mc_samples=32,
+                 grad_estimator_z="reparam",
+                 score_function_baseline=0.0,
+                 latent_prior_std=None,
+                 verbose=False):
 
         # handle mutable default args
         if kernel_param is None:
@@ -419,14 +463,12 @@ class JointDiBS(DiBS):
         Samples random particles to initialize SVGD
 
         Args:
-            key: rng key
-            n_particles: number of particles inferred
-            n_dim: size of latent dimension `k`. Defaults to `n_vars`, s.t. k == d
+            key (ndarray): rng key
+            n_particles (int): number of particles inferred
+            n_dim (int): size of latent dimension :math:`k`. Defaults to ``n_vars``, s.t. :math:`k = d`
 
         Returns:
-            z: batch of latent tensors [n_particles, d, k, 2]
-            theta: batch of parameters PyTree with leading dim `n_particles`
-        
+            batch of latent tensors ``[n_particles, d, k, 2]``
         """
         # default full rank
         if n_dim is None:
@@ -450,13 +492,14 @@ class JointDiBS(DiBS):
         Evaluates kernel
 
         Args:
-            x_latent: latent tensor [d, k, 2]
-            x_theta: parameter PyTree 
-            y_latent: latent tensor [d, k, 2]
-            y_theta: parameter PyTree 
+            x_latent (ndarray): latent tensor of shape ``[d, k, 2]``
+            x_theta (Any): parameter PyTree
+            y_latent (ndarray): latent tensor of shape ``[d, k, 2]``
+            y_theta (Any): parameter PyTree
 
         Returns:
-            kernel value
+            kernel value of shape ``[1, ]``
+
         """
         return self.kernel.eval(
             x_latent=x_latent, x_theta=x_theta,
@@ -468,13 +511,13 @@ class JointDiBS(DiBS):
         Computes pairwise kernel matrix
 
         Args:
-            x_latents: latent tensor [A, d, k, 2]
-            x_thetas: parameter PyTree with batch size A as leading dim
-            y_latents: latent tensor [B, d, k, 2]
-            y_thetas: parameter PyTree with batch size B as leading dim
+            x_latents (ndarray): latent tensor of shape ``[A, d, k, 2]``
+            x_thetas (Any): parameter PyTree with batch size ``A`` as leading dim
+            y_latents (ndarray): latent tensor of shape ``[B, d, k, 2]``
+            y_thetas (Any): parameter PyTree with batch size ``B`` as leading dim
 
         Returns:
-            [A, B] kernel values
+            kernel values of shape ``[A, B]``
         """
         return vmap(vmap(self._f_kernel, (None, None, 0, 0), 0),
                     (0, 0, None, None), 0)(x_latents, x_thetas, y_latents, y_thetas)
@@ -482,16 +525,17 @@ class JointDiBS(DiBS):
     
     def _eltwise_grad_kernel_z(self, x_latents, x_thetas, y_latent, y_theta):
         """
-        Computes gradient d/dz k((z, theta), (z', theta')) elementwise for each provided particle (z, theta)
+        Computes gradient :math:`\\nabla_Z k((Z, \\Theta), (Z', \\Theta'))` elementwise
+        for each provided particle :math:`(Z, \\Theta)` in batch (``x_latents`, ``x_thetas``)
 
         Args:
-            x_latents: batch of latent particles [n_particles, d, k, 2]
-            x_thetas: batch of parameter PyTree with leading dim `n_particles`
-            y_latent: single latent particle [d, k, 2] (z')
-            y_theta: single parameter PyTree (theta')
+            x_latents (ndarray): batch of latent particles for :math:`Z` of shape ``[n_particles, d, k, 2]``
+            x_thetas (Any): batch of parameter PyTrees for :math:`\\Theta` with leading dim ``n_particles``
+            y_latent (ndarray): single latent particle :math:`Z'` ``[d, k, 2]``
+            y_theta (Any): single parameter PyTree for :math:`\\Theta'`
 
         Returns:
-            batch of gradients for latent tensors Z [n_particles, d, k, 2]
+            batch of gradients of shape ``[n_particles, d, k, 2]``
         
         """        
         grad_kernel_z = grad(self._f_kernel, 0)
@@ -500,16 +544,17 @@ class JointDiBS(DiBS):
 
     def _eltwise_grad_kernel_theta(self, x_latents, x_thetas, y_latent, y_theta):
         """
-        Computes gradient d/dtheta k((z, theta), (z', theta')) elementwise for each provided particle (z, theta)
+        Computes gradient :math:`\\nabla_{\\Theta} k((Z, \\Theta), (Z', \\Theta'))` elementwise
+        for each provided particle :math:`(Z, \\Theta)` in batch (``x_latents`, ``x_thetas``)
 
         Args:
-            x_latents: batch of latent particles [n_particles, d, k, 2]
-            x_thetas: batch of parameter PyTree with leading dim `n_particles`
-            y_latent: single latent particle [d, k, 2] (z')
-            y_theta: single parameter PyTree (theta')
+            x_latents (ndarray): batch of latent particles for :math:`Z` of shape ``[n_particles, d, k, 2]``
+            x_thetas (Any): batch of parameter PyTrees for :math:`\\Theta` with leading dim ``n_particles``
+            y_latent (ndarray): single latent particle :math:`Z'` ``[d, k, 2]``
+            y_theta (Any): single parameter PyTree for :math:`\\Theta'`
 
         Returns:
-            batch of gradients for parameters (PyTree with leading dim `n_particles`)
+            batch of gradient PyTrees with leading dim ``n_particles``
         """
         grad_kernel_theta = grad(self._f_kernel, 1)
         return vmap(grad_kernel_theta, (0, 0, None, None), 0)(x_latents, x_thetas, y_latent, y_theta)
@@ -517,19 +562,21 @@ class JointDiBS(DiBS):
 
     def _z_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_z):
         """
-        Computes SVGD update for `single_z` of a (single_z, single_theta) tuple given the kernel values 
-        `kxx` and the d/dz gradients of the target density for each of the available particles 
+        Computes SVGD update for ``single_z`` of a particle tuple (``single_z``, ``single_theta``)
+        particle given the kernel values ``kxx`` and the :math:`d/dZ` gradients of the target density
+        for each of the available particles
 
         Args:
-            single_z: single latent tensor Z [d, k, 2], which is the Z particle being updated
-            single_theta: single parameter PyTree, the theta particle of the Z particle being updated
-            kxx: pairwise kernel values for all particles [n_particles, n_particles]  
-            z:  all latent tensor Z particles [n_particles, d, k, 2] 
-            theta: all theta particles as PyTree with leading dim `n_particles` 
-            grad_log_prob_z: gradients of all Z particles w.r.t target density  [n_particles, d, k, 2]  
+            single_z (ndarray): single latent tensor ``[d, k, 2]``, which is the :math:`\\Z` particle being updated
+            single_theta (Any): single parameter PyTree, the :math:`\\Theta` particle of the :math:`\\Z` particle being updated
+            kxx (ndarray): pairwise kernel values for all particles, of shape ``[n_particles, n_particles]``
+            z (ndarray):  all latent particles ``[n_particles, d, k, 2]``
+            theta (Any): all theta particles as PyTree with leading dim `n_particles`
+            grad_log_prob_z (ndarray): gradients of all Z particles w.r.t
+                target density of shape ``[n_particles, d, k, 2]``
 
         Returns
-            transform vector of shape [d, k, 2] for the Z particle being updated        
+            transform vector of shape ``[d, k, 2]`` for the particle ``single_z``
         """
     
         # compute terms in sum
@@ -541,28 +588,35 @@ class JointDiBS(DiBS):
 
     def _parallel_update_z(self, *args):
         """
-        Parallelizes `z_update` for all available particles
-        Otherwise, same inputs as `z_update`.
+        Vectorizes :func:`~dibs.inference.JointDiBS._z_update`
+        for all available particles in batched first and second input
+        dim (``single_z``, ``single_theta``)
+        Otherwise, same inputs as :func:`~dibs.inference.JointDiBS._z_update`.
         """
         return vmap(self._z_update, (0, 0, 1, None, None, None), 0)(*args)
 
 
     def _theta_update(self, single_z, single_theta, kxx, z, theta, grad_log_prob_theta):
         """
-        Computes SVGD update for `single_theta` of a (single_z, single_theta) tuple given the kernel values 
-        `kxx` and the d/dtheta gradients of the target density for each of the available particles 
+        Computes SVGD update for ``single_theta`` of a particle tuple (``single_z``, ``single_theta``)
+        particle given the kernel values ``kxx`` and the :math:`d/d\\Theta` gradients of the target density
+        for each of the available particles.
+
+        Analogous to :func:`dibs.inference.JointDiBS._z_update` but for updating :math:`\Theta`.
 
         Args:
-            single_z: single latent tensor Z [d, k, 2], the Z particle of the theta particle being updated
-            single_theta: single parameter PyTree being updated
-            kxx: pairwise kernel values for all particles [n_particles, n_particles]  
-            z:  all latent tensor Z particles [n_particles, d, k, 2] 
-            theta: all theta particles as PyTree with leading dim `n_particles` 
-            grad_log_prob_theta: gradients of all theta particles w.r.t target density 
-                PyTree with leading dim `n_particles
+            single_z (ndarray): single latent tensor ``[d, k, 2]``, which is the particle
+                particle of the :math:`\\Theta` particle being updated
+            single_theta (Any): single parameter PyTree, the :math:`\\Theta`, which is the
+                :math:`\\Theta` particle being updated
+            kxx (ndarray): pairwise kernel values for all particles, of shape ``[n_particles, n_particles]``
+            z (ndarray):  all latent particles ``[n_particles, d, k, 2]``
+            theta (Any): all theta particles as PyTree with leading dim `n_particles`
+            grad_log_prob_theta (ndarray): gradients of all :math:`\\Theta` particles w.r.t
+                target density of shape ``[n_particles, d, k, 2]``
 
         Returns:
-            transform vector PyTree with leading dim `n_particles` for the theta particle being updated   
+            transform vector PyTree with leading dim ``n_particles`` for the particle ``single_theta``
         """
     
         # compute terms in sum
@@ -583,25 +637,29 @@ class JointDiBS(DiBS):
 
     def _parallel_update_theta(self, *args):
         """
-        Parallelizes `theta_update` for all available particles
-        Otherwise, same inputs as `theta_update`.
+        Vectorizes :func:`~dibs.inference.JointDiBS._theta_update`
+        for all available particles in batched first and second input
+        dim (``single_z``, ``single_theta``).
+        Otherwise, same inputs as :func:`~dibs.inference.JointDiBS._theta_update`.
         """
         return vmap(self._theta_update, (0, 0, 1, None, None, None), 0)(*args)
 
 
     def _svgd_step(self, t, opt_state_z, opt_state_theta, key, sf_baseline):
         """
-        Performs a single SVGD step in the DiBS framework, updating Z and theta jointly.
-        
+        Performs a single SVGD step in the DiBS framework, updating all :math:`(Z, \\Theta)` particles jointly.
+
         Args:
-            t: step
-            opt_state_z: optimizer state for latent Z particles; contains [n_particles, d, k, 2]
-            opt_state_theta: optimizer state for theta particles; contains PyTree with `n_particles` leading dim
-            key: prng key
-            sf_baseline: batch of baseline values in case score function gradient is used [n_particles, ]
+            t (int): step
+            opt_state_z: optimizer state for latent :math:`Z` particles; contains ``[n_particles, d, k, 2]``
+            opt_state_theta: optimizer state for parameter :math:`\\Theta` particles;
+                contains PyTree with ``n_particles`` leading dim
+            key (ndarray): prng key
+            sf_baseline (ndarray): batch of baseline values of shape ``[n_particles, ]``
+                in case score function gradient is used
 
         Returns:
-            the updated inputs
+            the updated inputs ``opt_state_z``, ``opt_state_theta``, ``key``, ``sf_baseline``
         """
 
         z = self.get_params(opt_state_z) # [n_particles, d, k, 2]
@@ -646,21 +704,22 @@ class JointDiBS(DiBS):
 
     def sample(self, *, key, n_particles, steps, n_dim_particles=None, callback=None, callback_every=None):
         """
-        Use SVGD to sample `n_particles` particles (G, theta) from the joint posterior p(G, theta | D) as
-        defined by the BN model `self.inference_model`
+        Use SVGD with DiBS to sample ``n_particles`` particles :math:`(G, \\Theta)` from the joint posterior
+        :math:`p(G, \\Theta | D)` as defined by the BN model ``self.inference_model``
 
         Arguments:
-            key: prng key
+            key (ndarray): prng key
             n_particles (int): number of particles to sample
             steps (int): number of SVGD steps performed
-            n_dim_particles (int): latent dimensionality k of particles Z; default is `n_vars`
-            callback: function to be called every `callback_every` steps of SVGD.
-            callback_every: if `None`, `callback` is only called after particle updates have finished
+            n_dim_particles (int): latent dimensionality :math:`k` of particles :math:`Z = \{ U, V \}`
+                with :math:`U, V \\in \\mathbb{R}^{k \\times d}`. Default is ``n_vars``
+            callback: function to be called every ``callback_every`` steps of SVGD.
+            callback_every: if ``None``, ``callback`` is only called after particle updates have finished
 
         Returns:
-            particles_g: [n_particles, n_vars, n_vars]
-            particles_theta: PyTree of parameters with leading dimension `n_particles`
-           
+            tuple of shape (``[n_particles, n_vars, n_vars]``, ``PyTree``) where ``PyTree`` has leading dimension ``n_particles``:
+            batch of samples :math:`G, \\Theta \\sim p(G, \\Theta | D)`
+
         """
 
         # randomly sample initial particles
@@ -712,15 +771,18 @@ class JointDiBS(DiBS):
 
     def get_empirical(self, g, theta):
         """
-        Converts batch of binary (adjacency) matrices and parameters into empirical particle distribution
+        Converts batch of binary (adjacency) matrices and parameters into *empirical* particle distribution
+        where mixture weights correspond to counts/occurrences
 
         Args:
-            g: [N, d, d] with {0,1} values
-            theta: PyTree with leading dim `N`
+            g (ndarray): batch of graph samples ``[n_particles, d, d]`` with binary values
+            theta (Any): PyTree with leading dim ``n_particles``
 
         Returns:
-            ParticleDistribution
+            :class:`~dibs.metrics.ParticleDistribution`:
+            particle distribution of graph and parameter samples and associated log probabilities
         """
+
         N, _, _ = g.shape
 
         # since theta continuous, each particle (G, theta) is unique always
@@ -731,17 +793,19 @@ class JointDiBS(DiBS):
 
     def get_mixture(self, g, theta):
         """
-        Converts batch of binary (adjacency) matrices and parameters into mixture particle distribution,
+        Converts batch of binary (adjacency) matrices and particles into *mixture* particle distribution,
         where mixture weights correspond to unnormalized target (i.e. posterior) probabilities
 
         Args:
-           g: [N, d, d] with {0,1} values
-           theta: PyTree with leading dim `N`
+            g (ndarray): batch of graph samples ``[n_particles, d, d]`` with binary values
+            theta (Any): PyTree with leading dim ``n_particles``
 
         Returns:
-           ParticleDistribution
+            :class:`~dibs.metrics.ParticleDistribution`:
+            particle distribution of graph and parameter samples and associated log probabilities
 
         """
+
         N, _, _ = g.shape
 
         # mixture weighted by respective joint probabilities
