@@ -1,6 +1,3 @@
-import numpy as np
-import tqdm
-import scipy
 import igraph as ig
 import random as pyrandom
 
@@ -10,91 +7,42 @@ from jax.ops import index, index_mul
 
 from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
 
-class GraphDistribution:
+
+class ErdosReniDAGDistribution:
     """
-    Class to represent distributions over graphs.
-    """
+    Randomly oriented Erdos-Reni random graph model with i.i.d. edge probability.
+    The pmf is defined as
 
-    def __init__(self, n_vars, verbose=False):
-        self.n_vars = n_vars
-        self.verbose = verbose
+    :math:`p(G) \\propto p^e (1-p)^{\\binom{d}{2} - e}`
 
-    def sample_G(self, return_mat=False):
-        raise NotImplementedError
+    where :math:`e` denotes the total number of edges in :math:`G`
+    and :math:`p` is chosen to satisfy the requirement of sampling ``n_edges_per_node``
+    edges per node in expectation.
 
-    def log_normalization_constant(self, *, all_g):
-        """
-        Computes normalization constant for log p(G), i.e. `Z = log(sum_G p(g))`
+    Args:
+        n_vars (int): number of variables in DAG
+        n_edges_per_node (int): number of edges sampled per variable in expectation
 
-        Args:
-            all_g (list of `igraph.Graph` objects)
-
-        Returns:
-            float
-        """
-        log_prob_g_unn = np.zeros(len(all_g))
-        for i, g in enumerate(tqdm.tqdm(all_g, desc='p(G) log_normalization_constant', disable=not self.verbose)):
-            log_prob_g_unn[i] = self.unnormalized_log_prob(g=g)
-        log_prob_sum_g = scipy.special.logsumexp(log_prob_g_unn)
-        return log_prob_sum_g
-
-    def unnormalized_log_prob_single(self, *, g, j):
-        """
-        p(G) ~ 1
-
-        Args:
-            g (igraph.Graph)
-            j (int): node index
-        
-        Returns:
-            float
-        """
-        return 0.0
-
-    def unnormalized_log_prob(self, *, g):
-        """
-        p(G) ~ 1
-
-        Args:
-            g (igraph.Graph)
-        
-        Returns:
-            float
-        """
-        return 0.0
-
-
-    def unnormalized_log_prob_soft(self, *, soft_g):
-        """
-        p(G) ~ 1
-
-        Args:
-            soft_g: [d, d] soft adjacency matrix with values in [0,1]
-        
-        Returns:
-            float
-
-        """
-        return 0.0
-
-
-class ErdosReniDAGDistribution(GraphDistribution):
-    """
-    Randomly oriented Erdos-Reni random graph 
-    with prior p(G) = const
     """
 
-    def __init__(self, n_vars, verbose=False, n_edges=None):
-        super(ErdosReniDAGDistribution, self).__init__(n_vars=n_vars, verbose=verbose)
+    def __init__(self, n_vars, n_edges_per_node=2):
+        super(ErdosReniDAGDistribution, self).__init__()
 
         self.n_vars = n_vars
-        self.n_edges = n_edges or 2 * n_vars
+        self.n_edges = n_edges_per_node * n_vars
         self.p = self.n_edges / ((self.n_vars * (self.n_vars - 1)) / 2)
 
-        self.verbose = verbose
-
     def sample_G(self, key, return_mat=False):
-        """Samples DAG"""
+        """Samples DAG
+
+        Args:
+            key (ndarray): rng
+            return_mat (bool): if ``True``, returns adjacency matrix of shape ``[n_vars, n_vars]``
+
+        Returns:
+            ``iGraph.graph`` / ``jnp.array``:
+            DAG
+        """
 
         key, subk = random.split(key)
         mat = random.bernoulli(subk, p=self.p, shape=(self.n_vars, self.n_vars)).astype(jnp.int32)
@@ -115,9 +63,15 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob_single(self, *, g, j):
         """
-        p(G) ~ p^E (1-p)^((n choose 2) - E)
+        Computes :math:`\\log p(G_j)` up the normalization constant
 
-        where E is the number of ingoing edges into node `j` in `g`
+        Args:
+            g (iGraph.graph): graph
+            j (int): node index:
+
+        Returns:
+            unnormalized log probability of node family of :math:`j`
+
         """
         parent_edges = g.incident(j, mode='in')
         n_parents = len(parent_edges)
@@ -125,9 +79,14 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob(self, *, g):
         """
-        p(G) ~ p^E (1-p)^((n choose 2) - E)
+        Computes :math:`\\log p(G)` up the normalization constant
 
-        where E is the number of edges in `g`
+        Args:
+            g (iGraph.graph): graph
+
+        Returns:
+            unnormalized log probability of :math:`G`
+
         """
         N = self.n_vars * (self.n_vars - 1) / 2.0
         E = len(g.es)
@@ -136,32 +95,56 @@ class ErdosReniDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob_soft(self, *, soft_g):
         """
-        p(G) ~ p^E (1-p)^((n choose 2) - E)
+        Computes :math:`\\log p(G)` up the normalization constant
+        where :math:`G` is the matrix of edge probabilities
 
-        where E is the (soft) number of edges in `g`, i.e. the sum of entries of the
-        adjacency matrix `g`, which can for instance contain probabilities.
+        Args:
+            soft_g (ndarray): graph adjacency matrix, where entries
+                may be probabilities and not necessarily 0 or 1
+
+        Returns:
+            unnormalized log probability corresponding to edge probabilities in :math:`G`
+
         """
         N = self.n_vars * (self.n_vars - 1) / 2.0
         E = soft_g.sum()
         return E * jnp.log(self.p) + (N - E) * jnp.log(1 - self.p)
 
 
-class ScaleFreeDAGDistribution(GraphDistribution):
+class ScaleFreeDAGDistribution:
     """
-    Randomly oriented Scale-free random graph 
-    with prior p(G) = const
+    Randomly-oriented scale-free random graph with power-law degree distribution.
+    The pmf is defined as
+
+    :math:`p(G) \\propto \\prod_j (1 + \\text{deg}(j))^{-3}`
+
+    where :math:`\\text{deg}(j)` denotes the in-degree of node :math:`j`
+
+    Args:
+        n_vars (int): number of variables in DAG
+        n_edges_per_node (int): number of edges sampled per variable
+
     """
 
     def __init__(self, n_vars, verbose=False, n_edges_per_node=2):
-        super(ScaleFreeDAGDistribution, self).__init__(
-            n_vars=n_vars, verbose=verbose)
+        super(ScaleFreeDAGDistribution, self).__init__()
 
         self.n_vars = n_vars
         self.n_edges_per_node = n_edges_per_node
         self.verbose = verbose
 
+
     def sample_G(self, key, return_mat=False):
-        """Samples DAG"""
+        """Samples DAG
+
+        Args:
+            key (ndarray): rng
+            return_mat (bool): if ``True``, returns adjacency matrix of shape ``[n_vars, n_vars]``
+
+        Returns:
+            ``iGraph.graph`` / ``jnp.array``:
+            DAG
+        """
 
         pyrandom.seed(key.sum())
         perm = random.permutation(key, self.n_vars).tolist()
@@ -174,7 +157,15 @@ class ScaleFreeDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob_single(self, *, g, j):
         """
-        p(G) ~ prod_j deg(j)^-3
+        Computes :math:`\\log p(G_j)` up the normalization constant
+
+        Args:
+            g (iGraph.graph): graph
+            j (int): node index:
+
+        Returns:
+            unnormalized log probability of node family of :math:`j`
+
         """
         parent_edges = g.incident(j, mode='in')
         n_parents = len(parent_edges)
@@ -182,31 +173,60 @@ class ScaleFreeDAGDistribution(GraphDistribution):
 
     def unnormalized_log_prob(self, *, g):
         """
-        p(G) ~ prod_j deg(j)^-3
+        Computes :math:`\\log p(G)` up the normalization constant
+
+        Args:
+            g (iGraph.graph): graph
+
+        Returns:
+            unnormalized log probability of :math:`G`
+
         """
         return jnp.array([self.unnormalized_log_prob_single(g=g, j=j) for j in range(self.n_vars)]).sum()
 
     def unnormalized_log_prob_soft(self, *, soft_g):
         """
-        p(G) ~ prod_j deg(j)^-3
+        Computes :math:`\\log p(G)` up the normalization constant
+        where :math:`G` is the matrix of edge probabilities
+
+        Args:
+            soft_g (ndarray): graph adjacency matrix, where entries
+                may be probabilities and not necessarily 0 or 1
+
+        Returns:
+            unnormalized log probability corresponding to edge probabilities in :math:`G`
+
         """
         soft_indegree = soft_g.sum(0)
         return jnp.sum(-3 * jnp.log(1 + soft_indegree))
 
 
-class UniformDAGDistributionRejection(GraphDistribution):
+class UniformDAGDistributionRejection:
     """
-    Uniform distribution over DAGs
+    Naive implementation of a uniform distribution over DAGs via rejection
+    sampling. This is efficient up to roughly :math:`d = 5`.
+    Properly sampling a uniformly-random DAG is possible but nontrivial
+    and not implemented here.
+
+    Args:
+        n_vars (int): number of variables in DAG
+
     """
 
-    def __init__(self, n_vars, verbose=False):
-        super(UniformDAGDistributionRejection, self).__init__(n_vars=n_vars, verbose=verbose)
+    def __init__(self, n_vars):
+        super(UniformDAGDistributionRejection, self).__init__()
         self.n_vars = n_vars 
-        self.verbose = verbose
 
     def sample_G(self, key, return_mat=False):
-        """Samples uniformly random DAG by rejection sampling
-            Prohibitively inefficient for n > 5
+        """Samples DAG
+
+        Args:
+            key (ndarray): rng
+            return_mat (bool): if ``True``, returns adjacency matrix of shape ``[n_vars, n_vars]``
+
+        Returns:
+            ``iGraph.graph`` / ``jnp.array``:
+            DAG
         """
         mask_idx = index[..., jnp.arange(self.n_vars), jnp.arange(self.n_vars)]
 
@@ -220,3 +240,45 @@ class UniformDAGDistributionRejection(GraphDistribution):
                     return mat
                 else:
                     return mat_to_graph(mat)
+
+    def unnormalized_log_prob_single(self, *, g, j):
+        """
+        Computes :math:`\\log p(G_j)` up the normalization constant
+
+        Args:
+            g (iGraph.graph): graph
+            j (int): node index:
+
+        Returns:
+            unnormalized log probability of node family of :math:`j`
+
+        """
+        return jnp.array(0.0)
+
+    def unnormalized_log_prob(self, *, g):
+        """
+        Computes :math:`\\log p(G)` up the normalization constant
+
+        Args:
+            g (iGraph.graph): graph
+
+        Returns:
+            unnormalized log probability of :math:`G`
+
+        """
+        return jnp.array(0.0)
+
+    def unnormalized_log_prob_soft(self, *, soft_g):
+        """
+        Computes :math:`\\log p(G)` up the normalization constant
+        where :math:`G` is the matrix of edge probabilities
+
+        Args:
+            soft_g (ndarray): graph adjacency matrix, where entries
+                may be probabilities and not necessarily 0 or 1
+
+        Returns:
+            unnormalized log probability corresponding to edge probabilities in :math:`G`
+
+        """
+        return jnp.array(0.0)

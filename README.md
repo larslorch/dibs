@@ -21,7 +21,7 @@ Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo
 The documentation for the API of the `master` branch is linked here: [**Documentation**](https://github.com/larslorch/dibs)
 
 
-## [Quickstart](#quickstart)
+## Quickstart
 
 
 The following code snippet demonstrates how to use the `dibs` package. 
@@ -46,12 +46,15 @@ dibs = JointDiBS(x=data.x, inference_model=model)
 key, subk = random.split(key)
 gs, thetas = dibs.sample(key=subk, n_particles=20, steps=1000)
 ```
+In the above, the keyword argument `x` for `JointDiBS` is a matrix of shape `[N, d]` and could
+be any real-world data set.
 
-Whenever a GPU backend is available to JAX, the implementation will automatically leverage it to accelerate its computations. 
 
 ## Example Notebooks
 
-For a working example of the above,  we recommend opening our example notebook in Google Colab, which runs **directly from your browser**. Selecting the GPU runtime available in Google Colab will make inference significantly faster.
+For a working example of the above,  we recommend opening our example notebook in Google Colab, which runs **directly from your browser**. 
+Whenever a GPU backend is available to JAX, the implementation will automatically leverage it to accelerate its computations. 
+Thus, selecting the GPU runtime available in Google Colab will make inference significantly faster.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/larslorch/dibs/blob/master/examples/dibs_joint_colab.ipynb)
 

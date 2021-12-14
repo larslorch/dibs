@@ -20,12 +20,15 @@ class DiBS:
         log_graph_prior (func):
             function implementing prior :math:`\\log p(G)` of soft adjacency matrix of
             edge probabilities.
-            For example: ``dibs.graph.ErdosReniDAGDistribution.unnormalized_log_prob_soft``
-            or when bound in e.g. ``dibs.graph.LinearGaussian.log_graph_prior``
+            For example: :func:`~dibs.graph.ErdosReniDAGDistribution.unnormalized_log_prob_soft`
+            or usually bound in e.g. :func:`~dibs.graph.LinearGaussian.log_graph_prior`
         log_joint_prob:
             function implementing joint likelihood :math:`\\log p(\Theta, D | G)`
             of parameters and observations given the discrete graph adjacency matrix
-            For example: ``dibs.models.LinearGaussian.observational_log_joint_prob``
+            For example: :func:`dibs.models.LinearGaussian.observational_log_joint_prob`.
+            When inferring the marginal posterior :math:`p(G | D)` via a closed-form
+            marginal likelihood :math:`\\log p(D | G)`, the same function signature has to be
+            satisfied (simply ignoring :math:`\\Theta`)
         alpha_linear (float): slope of of linear schedule for inverse temperature :math:`\\alpha`
             of sigmoid in latent graph model :math:`p(G | Z)`
         beta_linear (float):  slope of of linear schedule for inverse temperature :math:`\\beta`

@@ -5,7 +5,9 @@ First, generate the auto-documentation files
 ```bash
 sphinx-apidoc -f  -o "source/" "../dibs/" "../dibs/inference/dibs.py" "../dibs/utils"
 ```
-This excludes all files after `"../dibs/"` from the documentation
+This excludes all files after `"../dibs/"` from the documentation.
+In the final version of the documentation online, the `.rst` files have been 
+modified and polished starting from the above default.
 
 After that, build the HTML 
 ```bash

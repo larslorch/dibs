@@ -85,12 +85,30 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
     
 
 class DenseNonlinearGaussian:
-    """	
-    Non-linear Gaussian BN with interactions modeled by a fully-connected neural net
-    See: https://arxiv.org/abs/1909.13189    
     """
+    Nonlinear Gaussian BN model corresponding to a nonlinaer structural equation model (SEM)
+    with additive Gaussian noise.
 
-    def __init__(self, *, graph_dist, obs_noise, sig_param, hidden_layers, activation='relu', bias=True):
+    Each variable distributed as Gaussian with mean parameterized by a dense neural network (MLP)
+    whose weights and biases are sampled from a Gaussian prior.
+    The noise variance at each node is equal by default.
+
+    Refer to http://proceedings.mlr.press/v108/zheng20a/zheng20a.pdf
+
+    Args:
+        graph_dist: Graph model defining prior :math:`\\log p(G)`. Object *has to implement the method*:
+            ``unnormalized_log_prob_soft``.
+            For example: :class:`~dibs.graph.ErdosReniDAGDistribution`
+            or :class:`~dibs.graph.ScaleFreeDAGDistribution`
+        hidden_layers (list): list of integers specifying the number of layers as well as their widths.
+            For example: ``[8, 8]`` would correspond to 2 hidden layers with 8 neurons
+        obs_noise (float, optional): variance of additive observation noise at nodes
+        sig_param (float, optional): std dev of Gaussian parameter prior
+        activation (str, optional): identifier for activation function.
+            Choices: ``sigmoid``, ``tanh``, ``relu``, ``leakyrelu``
+
+    """
+    def __init__(self, *, graph_dist, hidden_layers, obs_noise=0.1, sig_param=1.0, activation='relu', bias=True):
         super(DenseNonlinearGaussian, self).__init__()
 
         self.graph_dist = graph_dist
@@ -127,9 +145,10 @@ class DenseNonlinearGaussian:
 
 
     def get_theta_shape(self, *, n_vars):
-        """ Returns tree shape of the parameters of the neural networks
+        """Returns tree shape of the parameters of the neural networks
+
         Args:
-            n_vars
+            n_vars (int): number of variables in model
 
         Returns:
             PyTree of parameter shape
@@ -143,16 +162,17 @@ class DenseNonlinearGaussian:
 
 
     def sample_parameters(self, *, key, n_vars, n_particles=0, batch_size=0):
-        """Samples batch of random parameters given dimensions of graph, from p(theta | G)
+        """Samples batch of random parameters given dimensions of graph from :math:`p(\\Theta | G)`
 
-        Arguments:
-            key: rng
-            n_vars: number of variables in BN
-            n_particles: number of parameter particles sampled
-            batch_size: number of batches of particles being sampled
+        Args:
+            key (ndarray): rng
+            n_vars (int): number of variables in BN
+            n_particles (int): number of parameter particles sampled
+            batch_size (int): number of batches of particles being sampled
 
         Returns:
-            theta : PyTree with leading dimension of `n_particles`
+            Parameter PyTree with leading dimension(s) ``batch_size`` and/or ``n_particles``,
+            dropping either dimension when equal to 0
         """
         shape = [d for d in (batch_size, n_particles, n_vars) if d != 0]
         subkeys = random.split(key, int(onp.prod(shape))).reshape(*shape, 2)
@@ -176,18 +196,18 @@ class DenseNonlinearGaussian:
 
 
     def sample_obs(self, *, key, n_samples, g, theta, toporder=None, interv=None):
-        """
-        Samples `n_samples` observations by doing single forward passes in topological order
+        """Samples ``n_samples`` observations given graph ``g`` and parameters ``theta``
+        by doing single forward passes in topological order
 
-        Arguments:
-            key: rng
+        Args:
+            key (ndarray): rng
             n_samples (int): number of samples
             g (igraph.Graph): graph
-            theta : PyTree of parameters
-            interv: {intervened node : clamp value}
+            theta (Any): parameters
+            interv (dict): intervention specification of the form ``{intervened node : clamp value}``
 
         Returns:
-            x : [n_samples, d] 
+            observation matrix of shape ``[n_samples, n_vars]``
         """
         if interv is None:
             interv = {}
@@ -235,15 +255,15 @@ class DenseNonlinearGaussian:
     """
 
     def log_prob_parameters(self, *, theta, g):
-        """log p(theta | g)
-        Assumes N(mean_edge, sig_edge^2) distribution for any given edge 
+        """Computes parameter prior :math:`\\log p(\\Theta | G)``
+        In this model, the prior over weights and biases is zero-centered Gaussian.
 
         Arguments:
-            theta: parmeter PyTree
-            g: adjacency matrix of graph [n_vars, n_vars]
+            theta (Any): parameter pytree
+            g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
 
         Returns:
-            logprob [1,]
+            log prob
         """
         # compute log prob for each weight
         logprobs = tree_map(lambda leaf_theta: jax_normal.logpdf(x=leaf_theta, loc=0.0, scale=self.sig_param), theta)
@@ -262,17 +282,17 @@ class DenseNonlinearGaussian:
 
 
     def log_likelihood(self, *, x, theta, g, interv_targets):
-        """log p(x | theta, G)
-        Assumes N(mean_obs, obs_noise^2) distribution for any given observation
-        
+        """Computes likelihood :math:`p(D | G, \\Theta)`.
+        In this model, the noise per observation and node is additive and Gaussian.
+
         Arguments:
-            x: [N, d] observations
-            theta: parameter PyTree
-            g:  [n_vars, n_vars] graph adjacency matrix
-            interv_targets: boolean indicator of intervention locations [n_vars, ]
-        
+            x (ndarray): observations of shape ``[n_observations, n_vars]``
+            theta (Any): parameters PyTree
+            g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
+            interv_targets (ndarray): binary intervention indicator vector of shape ``[n_vars, ]``
+
         Returns:
-            logprob [1, ]
+            log prob
         """
 
         # [d2, N, d] = [1, N, d] * [d2, 1, d] mask non-parent entries of each j
@@ -297,28 +317,29 @@ class DenseNonlinearGaussian:
     """
 
     def log_graph_prior(self, g_prob):
-        """ log p(G)
+        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
+        This function simply binds the function of the provided ``self.graph_dist``.
 
         Arguments:
-            g_prob: [n_vars, n_vars] of edge probabilities in G
+            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
 
         Returns:
-            [1, ]
+            log prob
         """
         return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
 
 
     def observational_log_joint_prob(self, g, theta, x, rng):
-        """ log p(D, theta | G)  =  log p(D | G, theta) + log p(theta | G)
+        """Computes observational joint likelihood :math:`\\log p(\\Theta, D | G)``
 
         Arguments:
-           g: [n_vars, n_vars] graph adjacency matrix
-           theta: PyTree
-           x: [n_observations, n_vars] observational data
-           rng
+            g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
+            theta (Any): parameter PyTree
+            x (ndarray): observational data of shape ``[n_observations, n_vars]``
+            rng (ndarray): rng; skeleton for minibatching (TBD)
 
         Returns:
-           [1, ]
+            log prob of shape ``[1,]``
         """
         log_prob_theta = self.log_prob_parameters(g=g, theta=theta)
         log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=self.no_interv_targets)

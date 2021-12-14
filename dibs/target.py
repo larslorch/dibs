@@ -41,8 +41,8 @@ def make_synthetic_bayes_net(*,
     Args:
         key: rng key
         n_vars (int): number of variables
-        graph_dist (GraphDistribution): graph model object
-        generative_model : BN model object for generating the observations
+        graph_dist: graph model object
+        generative_model: BN model object for generating the observations
         n_observations (int): number of observations generated for posterior inference
         n_ho_observations (int): number of held-out observations generated for validation
         n_intervention_sets (int): number of different interventions considered overall
@@ -117,7 +117,7 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
     if graph_prior_str == 'er':
         graph_dist = ErdosReniDAGDistribution(
             n_vars=n_vars, 
-            n_edges=edges_per_node * n_vars)
+            n_edges_per_node=edges_per_node)
 
     elif graph_prior_str == 'sf':
         graph_dist = ScaleFreeDAGDistribution(
@@ -164,9 +164,7 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
         obs_noise=obs_noise, mean_edge=mean_edge, 
         sig_edge=sig_edge, graph_dist=graph_dist)
 
-    inference_model = BGe(
-        graph_dist=graph_dist, mean_obs=jnp.zeros(n_vars),
-        alpha_mu=1.0, alpha_lambd=n_vars + 2)
+    inference_model = BGe(graph_dist=graph_dist)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
