@@ -1,3 +1,9 @@
 sphinx==4.3.1
 sphinx-rtd-theme==1.0.0
 sphinxcontrib-napoleon==0.7
+sphinxcontrib-websupport
+
+jax>=0.2.8
+jaxlib>=0.1.59
+numpy>=1.18
+python-igraph==0.8.3

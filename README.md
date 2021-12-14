@@ -1,10 +1,12 @@
 # DiBS: Differentiable Bayesian Structure Learning
 
-[**Documentation**](https://github.com/larslorch/dibs)
+[**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/)
 | [**Quick start**](#quick-start)
 | [**Example Notebooks**](#example-notebooks)
 | [**Installation**](#installation)
 | [**Reference**](#reference)
+
+[![Documentation Status](https://readthedocs.org/projects/differentiable-bayesian-structure-learning/badge/?version=latest)](https://differentiable-bayesian-structure-learning.readthedocs.io/en/latest/?badge=latest)
 
 ## Quick start
 
@@ -18,7 +20,7 @@ The repository consists of two branches:
 In this implementation, DiBS inference is performed with the particle variational inference method *SVGD*  ([Liu and Wang, 2016](https://arxiv.org/abs/1608.04471)). 
 Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo estimation and gradient ascent-like updates, the inference code leverages efficient vectorized operations, automatic differentiation, just-in-time compilation, and hardware acceleration, fully implemented with [JAX](https://github.com/google/jax). 
 
-The documentation for the API of the `master` branch is linked here: [**Documentation**](https://github.com/larslorch/dibs)
+The documentation for the API of the `master` branch is linked here: [**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/)
 
 
 ## Quickstart
