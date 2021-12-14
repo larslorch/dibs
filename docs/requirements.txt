@@ -12,3 +12,4 @@ numpy>=1.18
 pandas==1.1.4
 python-igraph==0.8.3
 tqdm==4.46.0
+sklearn
