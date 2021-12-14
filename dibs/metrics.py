@@ -10,22 +10,33 @@ from typing import Any, NamedTuple
 
 
 class ParticleDistribution(NamedTuple):
+    """ NamedTuple for structuring sampled particles :math:`(G, \\Theta)` (or :math:`G`)
+    and their assigned log probabilities
+
+    Args:
+        logp (ndarray): vector of log probabilities or weights of shape ``[M, ]``
+        g (ndarray): batch of graph adjacency matrix of shape ``[M, d, d]``
+        theta (ndarray): batch of parameter PyTrees with leading dimension ``M``
+
+    """
+
     logp: Any
     g: Any
     theta: Any = None
 
 
 def pairwise_structural_hamming_distance(*, x, y):
-    """ Computes pairwise Structural Hamming distance, i.e.
+    """
+    Computes pairwise Structural Hamming distance, i.e.
     the number of edge insertions, deletions or flips in order to transform one graph to another
     This means, edge reversals do not double count, and that getting an undirected edge wrong only counts 1
 
     Args:
-        x:  [N, ...]
-        y:  [M, ...]
+        x (ndarray): batch of adjacency matrices  [N, d, d]
+        y (ndarray): batch of adjacency matrices  [M, d, d]
 
     Returns:
-        [N, M] where elt i,j is  SHD(x[i], y[j]) = sum(x[i] != y[j])
+        matrix of shape ``[N, M]``  where elt ``i,j`` is  SHD(``x[i]``, ``y[j]``)
     """
 
     # all but first axis is usually used for the norm, assuming that first dim is batch dim
@@ -44,15 +55,16 @@ def pairwise_structural_hamming_distance(*, x, y):
 
 def expected_shd(*, dist, g):
     """
-    Expected structural hamming distance
-    Defined as `expected_shd = sum_G p(G | D)  SHD(G, G*)`
+    Computes expected structural hamming distance metric, defined as
+
+    :math:`\\text{expected SHD}(p, G^*) := \\sum_G p(G | D)  \\text{SHD}(G, G^*)`
 
     Args:
-        dist: ParticleDistribution
-        g: [n_vars, n_vars]  ground truth graph
+        dist (:class:`dibs.metrics.ParticleDistribution`): particle distribution
+        g (ndarray): ground truth adjacency matrix of shape ``[d, d]``
 
     Returns: 
-        [1, ]
+        expected SHD ``[1, ]``
     """
     n_vars = g.shape[0]
 
@@ -76,19 +88,20 @@ def expected_shd(*, dist, g):
     return eshd
 
 
-def expected_edges(*, dist, g):
+def expected_edges(*, dist):
     """
-    Expected number of edges
-    Defined as `expected_edges = sum_G p(G | D)  #edges(G)`
+    Computes expected number of edges, defined as
+
+    :math:`\\text{expected edges}(p) := \\sum_G p(G | D)  |\\text{edges}(G)|`
 
     Args:
-        dist: ParticleDistribution
-        g: [n_vars, n_vars]  ground truth graph
+        dist (:class:`dibs.metrics.ParticleDistribution`): particle distribution
 
-    Returns: 
-        [1, ]
+    Returns:
+        expected number of edges ``[1, ]``
     """
-    n_vars = g.shape[0]
+
+    n_vars = dist.g.shape[-1]
 
     # select acyclic graphs
     is_dag = elwise_acyclic_constr_nograd(dist.g, n_vars) == 0
@@ -117,14 +130,14 @@ def expected_edges(*, dist, g):
 
 def threshold_metrics(*, dist, g):
     """
-    Various threshold metrics (e.g. AUROC) 
+    Computes various threshold metrics (e.g. ROC, precision-recall, ...)
 
     Args:
-        dist: ParticleDistribution
-        g: [n_vars, n_vars]  ground truth graph
+        dist (:class:`dibs.metrics.ParticleDistribution`): sampled particle distribution
+        g (ndarray): ground truth adjacency matrix of shape ``[d, d]``
 
-    Returns: 
-        [1, ]
+    Returns:
+        dict of metrics
     """
     n_vars = g.shape[0]
     g_flat = g.reshape(-1)
@@ -174,16 +187,21 @@ def threshold_metrics(*, dist, g):
 
 def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_marginal_likelihood, x):
     """
-    Computes neg. ave log marginal likelihood.
+    Computes neg. ave log marginal likelihood for a marginal posterior over :math:`G`, defined as
+
+    :math:`\\text{neg. MLL}(p, G^*) := - \\sum_G p(G | D)  p(D^{\\text{test}} | G)`
 
     Args:
-        dist: ParticleDistribution
-        eltwise_log_marginal_likelihood: function satisfying [:, n_vars, n_vars], [N, n_vars] -> [:, ]
-            and computing P(D | G) for held-out D
-        x: [N, d]
+        dist (:class:`dibs.metrics.ParticleDistribution`): particle distribution
+        eltwise_log_marginal_likelihood (callable):
+            function evaluting the marginal log likelihood :math:`p(D | G)` for a batch of graph samples given
+            a data set of held-out observations;
+            must satisfy the signature
+            ``[:, d, d], [N, d] -> [:,]``
+        x (ndarray): held-out observations of shape ``[N, d]``
 
-    Returns: 
-        [1, ]
+    Returns:
+        neg. ave log marginal likelihood metric of shape ``[1,]``
     """
     n_ho_observations, n_vars = x.shape
 
@@ -209,16 +227,21 @@ def neg_ave_log_marginal_likelihood(*, dist, eltwise_log_marginal_likelihood, x)
 
 def neg_ave_log_likelihood(*, dist, eltwise_log_likelihood, x):
     """
-    Computes neg. ave log marginal likelihood.
+    Computes neg. ave log likelihood for a joint posterior over :math:`(G, \\Theta)`, defined as
+
+    :math:`\\text{neg. LL}(p, G^*) := - \\sum_G \\int_{\\Theta} p(G, \\Theta | D)  p(D^{\\text{test}} | G, \\Theta)`
 
     Args:
-        dist: ParticleDistribution
-        eltwise_log_likelihood: function satisfying [:, n_vars, n_vars], [:, n_vars, n_vars], [N, n_vars] -> [:, ]
-            and computing p(D | G, theta) for held-out D=x
-        x: [N, d]
+        dist (:class:`dibs.metrics.ParticleDistribution`): particle distribution
+        eltwise_log_likelihood (callable):
+            function evaluting the log likelihood :math:`p(D | G, \\Theta)` for a batch of graph samples given
+            a data set of held-out observations;
+            must satisfy the signature
+            ``[:, d, d], PyTree(leading dim :), [N, d] -> [:,]``
+        x (ndarray): held-out observations of shape ``[N, d]``
 
-    Returns: 
-        [1, ]
+    Returns:
+        neg. ave log likelihood metric of shape ``[1,]``
     """
     assert dist.theta is not None
     n_ho_observations, n_vars = x.shape

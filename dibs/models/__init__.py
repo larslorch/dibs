@@ -1,3 +1,3 @@
-from .graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution
+from .graph import ErdosReniDAGDistribution, ScaleFreeDAGDistribution, UniformDAGDistributionRejection
 from .linearGaussian import BGe, LinearGaussian
 from .nonlinearGaussian import DenseNonlinearGaussian

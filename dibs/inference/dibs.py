@@ -17,12 +17,12 @@ class DiBS:
 
     Args:
         x (ndarray): matrix of shape ``[n_observations, n_vars]`` of i.i.d. observations of the variables
-        log_graph_prior (func):
+        log_graph_prior (callable):
             function implementing prior :math:`\\log p(G)` of soft adjacency matrix of
             edge probabilities.
             For example: :func:`~dibs.graph.ErdosReniDAGDistribution.unnormalized_log_prob_soft`
             or usually bound in e.g. :func:`~dibs.graph.LinearGaussian.log_graph_prior`
-        log_joint_prob:
+        log_joint_prob (callable):
             function implementing joint likelihood :math:`\\log p(\Theta, D | G)`
             of parameters and observations given the discrete graph adjacency matrix
             For example: :func:`dibs.models.LinearGaussian.observational_log_joint_prob`.
@@ -177,7 +177,7 @@ class DiBS:
 
         Args:
             z (ndarray): a single latent tensor :math:`Z` of shape ``[d, k, 2]``
-            eps (ndarray): random i.i.d. Logistic(0,1) noise  of shape ``[d, d] ``
+            eps (ndarray): random i.i.d. Logistic(0,1) noise  of shape ``[d, d]``
             t (int): step
         
         Returns:

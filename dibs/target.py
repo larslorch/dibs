@@ -10,18 +10,34 @@ from typing import Any, NamedTuple
 
 
 class Data(NamedTuple):
+    """ NamedTuple for structuring simulated synthetic data and their ground
+    truth generative model
 
-    passed_key: Any  # jax.random key passed _into_ the function generating this object
+    Args:
+        passed_key (ndarray): ``jax.random`` key passed *into* the function generating this object
+        n_vars (int): number of variables in model
+        n_observations (int): number of observations in ``x`` and used to perform inference
+        n_ho_observations (int): number of held-out observations in ``x_ho``
+            and elements of ``x_interv`` used for evaluation
+        g (ndarray): ground truth DAG
+        theta (Any): ground truth parameters
+        x (ndarray): i.i.d observations from the model of shape ``[n_observations, n_vars]``
+        x_ho (ndarray): i.i.d observations from the model of shape ``[n_ho_observations, n_vars]``
+        x_interv (list): list of (interv dict, i.i.d observations)
+
+    """
+
+    passed_key: Any
 
     n_vars: int
     n_observations: int
     n_ho_observations: int
 
-    g: Any          # [n_vars, n_vars]
-    theta: Any      # PyTree
-    x: Any          # [n_observations, n_vars]
-    x_ho :Any       # [n_ho_observations, n_vars]
-    x_interv: Any   # list of (interv dict, [n_ho_observations, n_vars])
+    g: Any
+    theta: Any
+    x: Any
+    x_ho :Any
+    x_interv: Any
 
 
 def make_synthetic_bayes_net(*,
@@ -35,23 +51,24 @@ def make_synthetic_bayes_net(*,
     perc_intervened=0.1,
 ):
     """
-    Returns an instance of `Target` for evaluation of a method against 
-    a ground truth synthetic Bayesian network
+    Returns an instance of :class:`~dibs.metrics.Target` for evaluation of a method on
+    a ground truth synthetic causal Bayesian network
 
     Args:
-        key: rng key
+        key (ndarray): rng key
         n_vars (int): number of variables
-        graph_dist: graph model object
-        generative_model: BN model object for generating the observations
+        graph_dist (Any): graph model object. For example: :class:`~dibs.models.ErdosReniDAGDistribution`
+        generative_model (Any): BN model object for generating the observations. For example: :class:`~dibs.models.LinearGaussian`
         n_observations (int): number of observations generated for posterior inference
-        n_ho_observations (int): number of held-out observations generated for validation
+        n_ho_observations (int): number of held-out observations generated for evaluation
         n_intervention_sets (int): number of different interventions considered overall
             for generating interventional data
-        perc_intervened (float): percentage of nodes intervened upon (set to 0) in 
+        perc_intervened (float): percentage of nodes intervened upon (clipped to 0) in
             an intervention.
 
     Returns:
-        `Target` 
+        :class:`~dibs.target.Data`:
+        synthetic ground truth generative DAG and parameters as well observations sampled from the model
     """
 
     # remember random key
@@ -107,12 +124,12 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
     Instantiates graph model
 
     Args:
-        n_vars (int): number of variables in BN
-        graph_prior_str: specifier for random graph model; choices: `er`, `sf`
-        edges_per_node: number of edges per node (in expectation when applicable)
+        n_vars (int): number of variables in graph
+        graph_prior_str (str): specifier for random graph model; choices: ``er``, ``sf``
+        edges_per_node (int): number of edges per node (in expectation when applicable)
 
     Returns:
-        `GraphDistribution`
+        Object representing graph model. For example :class:`~dibs.models.ErdosReniDAGDistribution` or :class:`~dibs.models.ScaleFreeDAGDistribution`
     """
     if graph_prior_str == 'er':
         graph_dist = ErdosReniDAGDistribution(
@@ -141,20 +158,21 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     as inference model to weight each DAG in an MEC equally
 
     By marginalizing out the parameters, the BGe model does not 
-    allow inferring the parameters (theta).
+    allow inferring the parameters :math:`\\Theta`.
     
     Args:
-        key: rng key
-        n_vars (int): number of variables in BN
-        n_observations (int): number of iid observations of variables in BN
-        n_ho_observations (int): number of iid held-out observations of variables in BN
-        graph_prior_str (str): graph prior (`er` or `sf`)
+        key (ndarray): rng key
+        n_vars (int): number of variables i
+        n_observations (int): number of iid observations of variables
+        n_ho_observations (int): number of iid held-out observations of variables
+        graph_prior_str (str): graph prior (``er`` or ``sf``)
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
         sig_edge (float): edge weight stddev
     
     Returns:
-        `Target` 
+        tuple(:class:`~dibs.models.BGe`, :class:`~dibs.target.Data`):
+        BGe inference model and observations from a linear Gaussian generative process
     """
 
     # init models
@@ -185,17 +203,18 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     Samples a synthetic linear Gaussian BN instance 
 
     Args:
-        key: rng key
-        n_vars (int): number of variables in BN
-        n_observations (int): number of iid observations of variables in BN
-        n_ho_observations (int): number of iid held-out observations of variables in BN
+        key (ndarray): rng key
+        n_vars (int): number of variables
+        n_observations (int): number of iid observations of variables
+        n_ho_observations (int): number of iid held-out observations of variables
         graph_prior_str (str): graph prior (`er` or `sf`)
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
         sig_edge (float): edge weight stddev
-    
+
     Returns:
-        `Target` 
+        tuple(:class:`~dibs.models.LinearGaussian`, :class:`~dibs.target.Data`):
+        linear Gaussian inference model and observations from a linear Gaussian generative process
     """
 
     # init models
@@ -227,13 +246,13 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     """
     Samples a synthetic nonlinear Gaussian BN instance 
     where the local conditional distributions are parameterized
-    by fully-connected neural networks
+    by fully-connected neural networks.
 
     Args:
-        key: rng key
-        n_vars (int): number of variables in BN
-        n_observations (int): number of iid observations of variables in BN
-        n_ho_observations (int): number of iid held-out observations of variables in BN
+        key (ndarray): rng key
+        n_vars (int): number of variables
+        n_observations (int): number of iid observations of variables
+        n_ho_observations (int): number of iid held-out observations of variables
         graph_prior_str (str): graph prior (`er` or `sf`)
         obs_noise (float): observation noise
         sig_param (float): stddev of the BN parameters,
@@ -242,7 +261,8 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
             of the neural nets parameterizatin the local condtitionals
     
     Returns:
-        `Target` 
+        tuple(:class:`~dibs.models.DenseNonlinearGaussian`, :class:`~dibs.metrics.Target`):
+        nonlinear Gaussian inference model and observations from a nonlinear Gaussian generative process
     """
 
     # init models
