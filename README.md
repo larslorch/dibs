@@ -100,7 +100,8 @@ If you find this code useful, please cite our paper:
 @article{lorch2021dibs,
   title={DiBS: Differentiable Bayesian Structure Learning},
   author={Lorch, Lars and Rothfuss, Jonas and Sch{\"o}lkopf, Bernhard and Krause, Andreas},
-  journal={arXiv preprint arXiv:2105.11839},
+  journal={Advances in Neural Information Processing Systems},
+  volume={34},
   year={2021}
 }
 ```
