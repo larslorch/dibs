@@ -1,14 +1,15 @@
 # DiBS: Differentiable Bayesian Structure Learning
 
 [**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/)
-| [**Quick start**](#quick-start)
+| [**Quick Start**](#quick-start)
 | [**Example Notebooks**](#example-notebooks)
 | [**Installation**](#installation)
+| [**Change Log**](#change-log)
 | [**Reference**](#reference)
 
 [![Documentation Status](https://readthedocs.org/projects/differentiable-bayesian-structure-learning/badge/?version=latest)](https://differentiable-bayesian-structure-learning.readthedocs.io/en/latest/?badge=latest)
 
-## Quick start
+## Quick Start
 
 This is the Python JAX implementation for *DiBS*  ([Lorch et al., 2021](https://arxiv.org/abs/2105.11839)), a fully differentiable method for joint Bayesian inference of the DAG and parameters of general, causal Bayesian networks.
 
@@ -90,6 +91,15 @@ If you want to use DiBS within an existing `conda` environment or `virtualenv`, 
 pip install -e .
 ```
 to set up the `dibs` package. 
+
+
+## Change Log
+
+- **Mar 4, 2022**: Extended BGe marginal likelihood to be well-defined inside the probability simplex. 
+The computation remains *exact* for binary entries but is well-behaved for soft relaxations of the graph.
+This allows reparameterization (Gumbel-softmax) gradient estimation for the BGe score.
+
+- **Dec 14, 2021**: Documentation added
 
 
 ## Reference

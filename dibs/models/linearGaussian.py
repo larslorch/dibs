@@ -1,13 +1,8 @@
-import numpy as onp
-
 import jax.numpy as jnp
-from jax import random, vmap, lax
+from jax import random, vmap
 from jax.ops import index, index_update
 from jax.scipy.stats import norm as jax_normal
 from jax.scipy.special import gammaln
-
-from dibs.utils.func import leftsel
-
 
 class BGe:
     """
@@ -26,7 +21,7 @@ class BGe:
     https://bitbucket.org/jamescussens/pygobnilp/src/master/pygobnilp/scoring.py
 
     This implementation uses properties of the determinant to make the computation of the marginal likelihood
-    ``jax.jit``-compilable.
+    ``jax.jit``-compilable and ``jax.grad``-differentiable by remaining well-defined for soft relaxations of the graph.
 
     Args:
         graph_dist: Graph model defining prior :math:`\\log p(G)`. Object *has to implement the method*:
@@ -70,28 +65,26 @@ class BGe:
     The following functions need to be functionally pure and jax.jit-compilable
     """
 
-    def _slogdet_jax(self, m, parents, n_parents):
+    def _slogdet_jax(self, m, parents):
         """
-        Log determinant of a submatrix. Made ``jax.jit``-compilable
-        by masking everything but the submatrix and adding a diagonal of ones everywhere
-        else to obtain the valid determinant
+        Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
+        by masking everything but the submatrix and adding a diagonal of ones everywhere else
+        to obtain the valid determinant
 
         Args:
             m (ndarray): matrix of shape ``[d, d]``
             parents (ndarray): boolean indicator of parents of shape ``[d, ]``
-            n_parents (int): number of parents in ``parents``
 
         Returns:
             natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
         """
 
         n_vars = parents.shape[0]
-        submat = leftsel(m, parents, maskval=onp.nan)
-        submat = leftsel(submat.T, parents, maskval=onp.nan).T
-        submat = jnp.where(jnp.isnan(submat), jnp.eye(n_vars), submat)
+        mask = jnp.einsum('...i,...j->...ij', parents, parents)
+        submat = mask * m + (1 - mask) * jnp.eye(n_vars)
         return jnp.linalg.slogdet(submat)[1]
 
-    def _log_marginal_likelihood_single(self, j, n_parents, R, g, x, log_gamma_terms):
+    def _log_marginal_likelihood_single(self, j, n_parents, R, g, x, small_t):
         """
         Computes node-specific score of BGe marginal likelihood. ``jax.jit``-compilable
 
@@ -101,7 +94,7 @@ class BGe:
             R (ndarray): internal matrix for BGe score of shape ``[d, d]``
             g (ndarray): adjacency matrix of shape ``[d, d]
             x (ndarray): observations matrix of shape ``[N, d]``
-            log_gamma_terms (ndarray): internal values for BGe score ``[d, ]``
+            small_t (float): internal value for BGe score ``[1, ]``
 
         Returns:
             BGe score for node ``j``
@@ -109,55 +102,42 @@ class BGe:
 
         N, d = x.shape
 
-        isj = jnp.arange(d) == j
-        parents = g[:, j] == 1
-        parents_and_j = parents | isj
+        parents = g[:, j]
+        parents_and_j = (g + jnp.eye(d))[:, j]
 
-        # if `JAX_DEBUG_NANS` flag raises NaN error here:  ignore
-        # happens due to lax.cond evaluating the second clause when n_parents == 0
-        log_term_r = lax.cond(
-            n_parents == 0,
-            # leaf node case
-            lambda _: (
-                # log det(R)^(...)
-                    - 0.5 * (N + self.alpha_lambd - d + 1) * jnp.log(jnp.abs(R[j, j]))
-            ),
-            # child case
-            lambda _: (
-                # log det(R_II)^(..) / det(R_JJ)^(..)
-                    0.5 * (N + self.alpha_lambd - d + n_parents) *
-                    self._slogdet_jax(R, parents, n_parents)
-                    - 0.5 * (N + self.alpha_lambd - d + n_parents + 1) *
-                    self._slogdet_jax(R, parents_and_j, n_parents + 1)
-            ),
-            operand=None,
+        log_gamma_term = (
+                0.5 * (jnp.log(self.alpha_mu) - jnp.log(N + self.alpha_mu))
+                + gammaln(0.5 * (N + self.alpha_lambd - d + n_parents + 1))
+                - gammaln(0.5 * (self.alpha_lambd - d + n_parents + 1))
+                - 0.5 * N * jnp.log(jnp.pi)
+                # log det(T_JJ)^(..) / det(T_II)^(..) for default T
+                + 0.5 * (self.alpha_lambd - d + 2 * n_parents + 1) *
+                jnp.log(small_t)
         )
 
-        return log_gamma_terms[n_parents] + log_term_r
+        log_term_r = (
+            # log det(R_II)^(..) / det(R_JJ)^(..)
+                0.5 * (N + self.alpha_lambd - d + n_parents) *
+                self._slogdet_jax(R, parents)
+                - 0.5 * (N + self.alpha_lambd - d + n_parents + 1) *
+                self._slogdet_jax(R, parents_and_j)
+        )
 
-    def _eltwise_log_marginal_likelihood_single(self, *args):
-        """
-        Same as :func:`~dibs.models.BGe._log_marginal_likelihood_single`
-        but batched over `j` and `n_parents` dimensions
-        """
-        return vmap(self._log_marginal_likelihood_single, (0, 0, None, None, None, None), 0)(*args)
+        return log_gamma_term + log_term_r
 
     def log_marginal_likelihood(self, *, g, x, interv_targets=None):
         """Computes BGe marginal likelihood :math:`\\log p(D | G)`` in closed-form;
         ``jax.jit``-compatible
 
         Args:
-            g (ndarray): adjacency matrix of shape ``[d, d]``
-            x (ndarray): observations of shape ``[N, d]``
-            interv_targets (ndarray, optional): boolean mask of shape ``[d, ]`` of whether or not
-                a node was intervened upon. Intervened nodes are ignored in likelihood computation
+           g (ndarray): adjacency matrix of shape ``[d, d]``
+           x (ndarray): observations of shape ``[N, d]``
+           interv_targets (ndarray, optional): boolean mask of shape ``[d, ]`` of whether or not
+               a node was intervened upon. Intervened nodes are ignored in likelihood computation
 
         Returns:
-            BGe Score
+           BGe Score
         """
-        assert g.dtype == jnp.int32, f"g has dtype `{g.dtype}` but should have `int32`. If this is a float type, " \
-                                     "make sure you don't use the Gumbel-softmax, but instead the score function " \
-                                     "gradient estimator with BGe "
         N, d = x.shape
 
         # intervention
@@ -167,7 +147,6 @@ class BGe:
         # pre-compute matrices
         small_t = (self.alpha_mu * (self.alpha_lambd - d - 1)) / (self.alpha_mu + 1)
         T = small_t * jnp.eye(d)
-
         x_bar = x.mean(axis=0, keepdims=True)
         x_center = x - x_bar
         s_N = x_center.T @ x_center  # [d, d]
@@ -177,30 +156,15 @@ class BGe:
         R = T + s_N + ((N * self.alpha_mu) / (N + self.alpha_mu)) * \
             ((x_bar - self.mean_obs).T @ (x_bar - self.mean_obs))  # [d, d]
 
-        # store log gamma terms for all possible values of l
-        all_l = jnp.arange(d)
-        log_gamma_terms = (
-                0.5 * (jnp.log(self.alpha_mu) - jnp.log(N + self.alpha_mu))
-                + gammaln(0.5 * (N + self.alpha_lambd - d + all_l + 1))
-                - gammaln(0.5 * (self.alpha_lambd - d + all_l + 1))
-                - 0.5 * N * jnp.log(jnp.pi)
-                # log det(T_JJ)^(..) / det(T_II)^(..) for default T
-                + 0.5 * (self.alpha_lambd - d + 2 * all_l + 1) *
-                jnp.log(small_t)
-        )
-
         # compute number of parents for each node
         n_parents_all = g.sum(axis=0)
 
-        # sum scores for all nodes
-        return jnp.sum(
-            jnp.where(
-                interv_targets,
-                0.0,
-                self._eltwise_log_marginal_likelihood_single(
-                    jnp.arange(d), n_parents_all, R, g, x, log_gamma_terms)
-            )
-        )
+        # sum scores for all nodes (batched over `j` and `n_parents` dimensions)
+        scores = vmap(self._log_marginal_likelihood_single,
+                      (0, 0, None, None, None, None), 0)(jnp.arange(d), n_parents_all, R, g, x, small_t)
+
+        return jnp.sum(jnp.where(interv_targets, 0.0, scores))
+
 
     """
     Distributions used by DiBS for inference:  prior and marginal likelihood 
@@ -256,10 +220,11 @@ class LinearGaussian:
         obs_noise (float, optional): variance of additive observation noise at nodes
         mean_edge (float, optional): mean of Gaussian edge weight
         sig_edge (float, optional): std dev of Gaussian edge weight
+        min_edge (float, optional): minimum linear effect of parent on child
 
     """
 
-    def __init__(self, *, graph_dist, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0):
+    def __init__(self, *, graph_dist, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5):
         super(LinearGaussian, self).__init__()
 
         self.graph_dist = graph_dist
@@ -267,6 +232,7 @@ class LinearGaussian:
         self.obs_noise = obs_noise
         self.mean_edge = mean_edge
         self.sig_edge = sig_edge
+        self.min_edge = min_edge
 
         self.no_interv_targets = jnp.zeros(self.n_vars).astype(bool)
 
@@ -297,6 +263,7 @@ class LinearGaussian:
         """
         shape = (batch_size, n_particles, *self.get_theta_shape(n_vars=n_vars))
         theta = self.mean_edge + self.sig_edge * random.normal(key, shape=tuple(d for d in shape if d != 0))
+        theta += jnp.sign(theta) * self.min_edge
         return theta
 
     

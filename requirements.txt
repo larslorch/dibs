@@ -1,9 +1,10 @@
 imageio==2.9.0
-jax>=0.2.8
-jaxlib>=0.1.59
+jax>=0.2.8  # compatible with Apple silicon: jax==0.2.10
+jaxlib>=0.1.59  # compatible with Apple silicon: jaxlib==0.1.60
 jupyter==1.0.0
 matplotlib==3.3.3
 numpy>=1.18
 pandas==1.1.4
 python-igraph==0.8.3
+sklearn==0.0
 tqdm==4.46.0

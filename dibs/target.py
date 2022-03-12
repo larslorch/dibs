@@ -150,7 +150,7 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
 
 
 def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf', 
-    obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, n_observations=100,
+    obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5, n_observations=100,
     n_ho_observations=100):
     """
     Samples a synthetic linear Gaussian BN instance 
@@ -169,6 +169,7 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
         sig_edge (float): edge weight stddev
+        min_edge (float): min edge weight enforced by constant shift of sampled parameter
     
     Returns:
         tuple(:class:`~dibs.models.BGe`, :class:`~dibs.target.Data`):
@@ -179,8 +180,9 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge, graph_dist=graph_dist)
+        graph_dist=graph_dist, obs_noise=obs_noise,
+        mean_edge=mean_edge, sig_edge=sig_edge,
+        min_edge=min_edge)
 
     inference_model = BGe(graph_dist=graph_dist)
 
@@ -197,7 +199,7 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
 
 
 def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
-    obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, n_observations=100,
+    obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5, n_observations=100,
     n_ho_observations=100):
     """
     Samples a synthetic linear Gaussian BN instance 
@@ -211,6 +213,7 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
         sig_edge (float): edge weight stddev
+        min_edge (float): min edge weight enforced by constant shift of sampled parameter
 
     Returns:
         tuple(:class:`~dibs.models.LinearGaussian`, :class:`~dibs.target.Data`):
@@ -221,12 +224,14 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge, graph_dist=graph_dist)
+        graph_dist=graph_dist, obs_noise=obs_noise,
+        mean_edge=mean_edge, sig_edge=sig_edge,
+        min_edge=min_edge)
 
     inference_model = LinearGaussian(
-        obs_noise=obs_noise, mean_edge=mean_edge, 
-        sig_edge=sig_edge, graph_dist=graph_dist)
+        graph_dist=graph_dist, obs_noise=obs_noise,
+        mean_edge=mean_edge, sig_edge=sig_edge,
+        min_edge=min_edge)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
