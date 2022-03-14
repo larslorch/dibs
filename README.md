@@ -3,12 +3,14 @@
 [**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/)
 | [**Quick Start**](#quick-start)
 | [**Example Notebooks**](#example-notebooks)
-| [**Installation**](#installation)
 | [**Change Log**](#change-log)
-| [**Branches**](#branches)
+| [**Branches**](#branches-and-custom-installation)
 | [**Reference**](#reference)
 
 [![Documentation Status](https://readthedocs.org/projects/differentiable-bayesian-structure-learning/badge/?version=latest)](https://differentiable-bayesian-structure-learning.readthedocs.io/en/latest/?badge=latest)
+[![PyPi](https://img.shields.io/pypi/v/dibs-lib?logo=PyPI)](https://pypi.org/project/dibs-lib/)
+
+
 
 ## Overview
 
@@ -17,14 +19,21 @@ This is the Python JAX implementation for *DiBS*  ([Lorch et al., 2021](https://
 In this implementation, DiBS inference is performed with the particle variational inference method *SVGD*  ([Liu and Wang, 2016](https://arxiv.org/abs/1608.04471)). 
 Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo estimation and gradient ascent-like updates, the inference code leverages efficient vectorized operations, automatic differentiation, just-in-time compilation, and hardware acceleration, fully implemented with [JAX](https://github.com/google/jax). 
 
-The documentation for the API of the `master` branch is linked here: [**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/)
+To install the latest stable release, run:
+
+```bash
+pip install dibs-lib
+```
 
 
-## Quickstart
+The documentation is linked here: 
+[**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/).
+If you work on Apple Silicon, we recommend using the compatible JAX versions `jax==0.2.10 jaxlib==0.1.60`
 
+## Quick Start
 
 The following code snippet demonstrates how to use the `dibs` package. 
-In this example, we use DiBS to generate 20 DAG and parameter samples 
+In this example, we use DiBS to generate 10 DAG and parameter samples 
 from the joint posterior over Gaussian Bayes nets with means modeled 
 by neural networks.
 
@@ -66,45 +75,36 @@ that are transported by SVGD during inference.
 </p>
 <br/><br/>
 
-## Installation
-
-The provided code is run with `python`. We recommend using `conda`. First clone the code repository:
-```
-git clone https://github.com/larslorch/dibs.git
-```
-
-
-If you want to set up a new `conda` environment, you can run the following commands:
-```
-cd dibs
-conda env create --file environment.yml
-conda activate dibs
-pip install -e .
-```
-Note the "`.`" in the last call. 
-If you want to use DiBS within an existing `conda` environment or `virtualenv`, you can just run 
-```
-pip install -e .
-```
-to set up the `dibs` package. 
-
 
 ## Change Log
 
-- **Mar 4, 2022**: Extended BGe marginal likelihood to be well-defined inside the probability simplex. 
+- **Mar 14, 2022**: Published to PyPI
+
+
+- **Mar 12, 2022**: Extended BGe marginal likelihood to be well-defined inside the probability simplex. 
 The computation remains *exact* for binary entries but is well-behaved for soft relaxations of the graph.
 This allows reparameterization (Gumbel-softmax) gradient estimation for the BGe score.
 
 - **Dec 14, 2021**: Documentation added
 
-## Branches
+## Branches and Custom Installation 
 
 The repository consists of two branches:
 
-- `master` (recommended): Lightweight and easy-to-use package for using DiBS in your research or applications.
+- `master` (recommended, on PyPI): Lightweight and easy-to-use package for using DiBS in your research or applications.
 - `full`: Comprehensive code to reproduce the experimental results in ([Lorch et al., 2021](https://arxiv.org/abs/2105.11839)). 
 The purpose of this branch is reproducibility; the branch is not updated anymore and may contain outdated notation and documentation.
 
+The latest stable release is published on PyPI, so the best way to install `dibs` is using `pip` as shown above.
+For custom installations, we recommend using `conda` and generating a new environment via `environment.yml`.
+Next, clone the code repository:
+```
+git clone https://github.com/larslorch/dibs.git
+```
+Finally, install the `dibs` package with
+```
+pip install -e .
+```
 
 ## Reference
    
