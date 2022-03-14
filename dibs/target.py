@@ -97,7 +97,7 @@ def make_synthetic_bayes_net(*,
         key, subk = random.split(key)
         n_interv = jnp.ceil(n_vars * perc_intervened).astype(jnp.int32)
         interv_targets = random.choice(subk, n_vars, shape=(n_interv,), replace=False)
-        interv = {k: 0.0 for k in interv_targets}
+        interv = {int(k): 0.0 for k in interv_targets}
 
         # observations from p(x | theta, G, interv) [n_samples, n_vars]
         key, subk = random.split(key)
