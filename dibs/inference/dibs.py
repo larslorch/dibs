@@ -502,7 +502,7 @@ class DiBS:
     # (i.e. w.r.t the conditional distribution parameters)
     #
 
-    def eltwise_grad_theta_likelihood(self, zs, thetas, t, subk):
+    def eltwise_grad_theta_likelihood(self, zs, thetas, t, subkeys):
         """
         Computes batch of estimators for the score   :math:`\\nabla_{\\Theta} \\log p(\\Theta, D | Z)`,
         i.e. w.r.t the conditional distribution parameters.
@@ -520,7 +520,7 @@ class DiBS:
             batch of gradients in form of ``thetas`` PyTree with ``n_particles`` as leading dim
 
         """
-        return vmap(self.grad_theta_likelihood, (0, 0, None, None), 0)(zs, thetas, t, subk)
+        return vmap(self.grad_theta_likelihood, (0, 0, None, 0), 0)(zs, thetas, t, subkeys)
 
 
     def grad_theta_likelihood(self, single_z, single_theta, t, subk):

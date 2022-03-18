@@ -667,8 +667,8 @@ class JointDiBS(DiBS):
         n_particles = z.shape[0]
 
         # d/dtheta log p(theta, D | z)
-        key, subk = random.split(key)
-        dtheta_log_prob = self.eltwise_grad_theta_likelihood(z, theta, t, subk)
+        key, *batch_subk = random.split(key, n_particles + 1)
+        dtheta_log_prob = self.eltwise_grad_theta_likelihood(z, theta, t, jnp.array(batch_subk))
 
         # d/dz log p(theta, D | z)
         key, *batch_subk = random.split(key, n_particles + 1)
