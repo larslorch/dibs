@@ -213,7 +213,7 @@ class DiBS:
         probs =  sigmoid(self.alpha(t) * scores)
 
         # mask diagonal since it is explicitly not modeled
-        probs = probs.at[index[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])]].multiply(0.0)
+        probs = probs.at[index[..., jnp.arange(probs.shape[-1]), jnp.arange(probs.shape[-1])]].multiply(0.0)
         return probs
 
     
@@ -234,7 +234,7 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         # NOTE: this is not technically log(p), but the way `edge_log_probs_` is used, this is correct
-        log_probs= log_probs.at[index[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])]].multiply(0.0)
+        log_probs = log_probs.at[index[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])]].multiply(0.0)
         log_probs_neg = log_probs_neg.at[index[..., jnp.arange(log_probs_neg.shape[-1]), jnp.arange(log_probs_neg.shape[-1])]].multiply(0.0)
         return log_probs, log_probs_neg
 
