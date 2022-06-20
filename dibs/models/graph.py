@@ -1,9 +1,9 @@
 import igraph as ig
 import random as pyrandom
+from jax.numpy import index_exp as index
 
 import jax.numpy as jnp
 from jax import random
-from jax.ops import index, index_mul
 
 from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
 
@@ -233,7 +233,7 @@ class UniformDAGDistributionRejection:
         while True:
             key, subk = random.split(key)
             mat = random.bernoulli(subk, p=0.5, shape=(self.n_vars, self.n_vars)).astype(jnp.int32)
-            mat = index_mul(mat, mask_idx, 0)
+            mat = mat.at[mask_idx].multiply(0)
 
             if mat_is_dag(mat):
                 if return_mat:
