@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 setup(
     name='dibs-lib',
-    version='1.0.1',
+    version='1.0.2',
     description='DiBS: Differentiable Bayesian Structure Learning',
     author='Lars Lorch',
     author_email='lars.lorch@inf.ethz.ch',
