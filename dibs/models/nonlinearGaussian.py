@@ -4,17 +4,24 @@ import numpy as onp
 import jax.numpy as jnp
 from jax import vmap
 from jax import random
-from jax.numpy import index_exp as index
 from jax.scipy.stats import norm as jax_normal
 from jax.tree_util import tree_map, tree_reduce
 from jax.nn.initializers import normal
+
 try:
     import jax.example_libraries.stax as stax
     from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
 except ImportError:
-    # for jax <= 2.24
+    # for jax <= 0.2.24
     import jax.experimental.stax as stax
     from jax.experimental.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
+
+try:
+    from jax.numpy import index_exp as index
+except ImportError:
+    # for jax <= 0.3.2
+    from jax.ops import index
+
 
 from dibs.graph_utils import graph_to_mat
 from dibs.utils.tree import tree_shapes

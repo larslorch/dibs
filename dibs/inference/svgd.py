@@ -9,7 +9,7 @@ from jax.scipy.special import logsumexp
 try:
     from jax.example_libraries import optimizers
 except ImportError:
-    # for jax <= 2.24
+    # for jax <= 0.2.24
     from jax.experimental import optimizers
 
 

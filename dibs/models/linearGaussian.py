@@ -1,8 +1,13 @@
 import jax.numpy as jnp
 from jax import random, vmap
 from jax.scipy.stats import norm as jax_normal
-from jax.numpy import index_exp as index
 from jax.scipy.special import gammaln
+
+try:
+    from jax.numpy import index_exp as index
+except ImportError:
+    # for jax <= 0.3.2
+    from jax.ops import index
 
 class BGe:
     """
