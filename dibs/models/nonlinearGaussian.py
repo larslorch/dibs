@@ -4,7 +4,7 @@ import numpy as onp
 import jax.numpy as jnp
 from jax import vmap
 from jax import random
-from jax.ops import index, index_update
+from jax.numpy import index_exp as index
 from jax.scipy.stats import norm as jax_normal
 from jax.tree_util import tree_map, tree_reduce
 from jax.nn.initializers import normal
@@ -228,7 +228,7 @@ class DenseNonlinearGaussian:
 
             # intervention
             if j in interv.keys():
-                x = index_update(x, index[:, j], interv[j])
+                x = x.at[index[:, j]].set(interv[j])
                 continue
 
             # regular ancestral sampling
@@ -244,9 +244,9 @@ class DenseNonlinearGaussian:
                 means = self.eltwise_nn_forward(theta, x_msk)
 
                 # [N,] update j only
-                x = index_update(x, index[:, j], means[:, j] + z[:, j])
+                x = x.at[index[:, j]].set(means[:, j] + z[:, j])
             else:
-                x = index_update(x, index[:, j], z[:, j])
+                x = x.at[index[:, j]].set(z[:, j])
 
         return x
 

@@ -1,7 +1,7 @@
 import jax.numpy as jnp
+from jax.numpy import index_exp as index
 from jax import vmap, random, grad
 from jax.scipy.special import logsumexp
-from jax.ops import index, index_mul
 from jax.nn import sigmoid, log_sigmoid
 import jax.lax as lax
 from jax.tree_util import tree_map, tree_multimap
@@ -122,7 +122,7 @@ class DiBS:
         g_samples = (scores > 0).astype(jnp.int32)
 
         # zero diagonal
-        g_samples = index_mul(g_samples, index[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])], 0)
+        g_samples = g_samples.at[index[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])]].multiply(0)
         return g_samples
 
 
@@ -143,8 +143,7 @@ class DiBS:
             subk, p=self.mat_to_vec(p), shape=(n_samples, n_vars * n_vars)), n_vars).astype(jnp.int32)
 
         # mask diagonal since it is explicitly not modeled
-        g_samples = index_mul(g_samples, index[..., jnp.arange(p.shape[-1]), jnp.arange(p.shape[-1])], 0)
-
+        g_samples = g_samples.at[index[..., jnp.arange(p.shape[-1]), jnp.arange(p.shape[-1])]].multiply(0)
         return g_samples
 
     def particle_to_soft_graph(self, z, eps, t):
@@ -167,7 +166,7 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         n_vars = soft_graph.shape[-1]
-        soft_graph = index_mul(soft_graph, index[..., jnp.arange(n_vars), jnp.arange(n_vars)], 0.0)
+        soft_graph = soft_graph.at[index[..., jnp.arange(n_vars), jnp.arange(n_vars)]].multiply(0.0)
         return soft_graph
 
 
@@ -190,7 +189,7 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         n_vars = hard_graph.shape[-1]
-        hard_graph = index_mul(hard_graph, index[..., jnp.arange(n_vars), jnp.arange(n_vars)], 0.0)
+        hard_graph = hard_graph.at[index[..., jnp.arange(n_vars), jnp.arange(n_vars)]].multiply(0.0)
         return hard_graph
 
 
@@ -214,7 +213,7 @@ class DiBS:
         probs =  sigmoid(self.alpha(t) * scores)
 
         # mask diagonal since it is explicitly not modeled
-        probs = index_mul(probs, index[..., jnp.arange(probs.shape[-1]), jnp.arange(probs.shape[-1])], 0.0)
+        probs = probs.at[index[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])]].multiply(0.0)
         return probs
 
     
@@ -235,8 +234,8 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         # NOTE: this is not technically log(p), but the way `edge_log_probs_` is used, this is correct
-        log_probs = index_mul(log_probs, index[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])], 0.0)
-        log_probs_neg = index_mul(log_probs_neg, index[..., jnp.arange(log_probs_neg.shape[-1]), jnp.arange(log_probs_neg.shape[-1])], 0.0)
+        log_probs= log_probs.at[index[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])]].multiply(0.0)
+        log_probs_neg = log_probs_neg.at[index[..., jnp.arange(log_probs_neg.shape[-1]), jnp.arange(log_probs_neg.shape[-1])]].multiply(0.0)
         return log_probs, log_probs_neg
 
 
