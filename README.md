@@ -15,8 +15,7 @@
 ## Overview
 
 This is the Python JAX implementation for *DiBS*  ([Lorch et al., 2021](https://arxiv.org/abs/2105.11839)), a fully differentiable method for joint Bayesian inference of the DAG and parameters of general, causal Bayesian networks.
-
-In this implementation, DiBS inference is performed with the particle variational inference method *SVGD*  ([Liu and Wang, 2016](https://arxiv.org/abs/1608.04471)). 
+In this implementation, DiBS inference is performed with *SVGD*  ([Liu and Wang, 2016](https://arxiv.org/abs/1608.04471)). 
 Since DiBS and SVGD operate on continuous tensors and solely rely on Monte Carlo estimation and gradient ascent-like updates, the inference code leverages efficient vectorized operations, automatic differentiation, just-in-time compilation, and hardware acceleration, fully implemented with [JAX](https://github.com/google/jax). 
 
 To install the latest stable release, run:
@@ -48,19 +47,21 @@ key, subk = random.split(key)
 data, model = make_nonlinear_gaussian_model(key=subk, n_vars=20)
 
 # sample 10 DAG and parameter particles from the joint posterior
-dibs = JointDiBS(x=data.x, inference_model=model)
+dibs = JointDiBS(x=data.x, interv_mask=None, inference_model=model)
 key, subk = random.split(key)
 gs, thetas = dibs.sample(key=subk, n_particles=10, steps=1000)
 ```
-In the above, the keyword argument `x` for `JointDiBS` is a matrix of shape `[N, d]` and could
-be any real-world data set.
+The argument `x` for `JointDiBS` is a matrix of shape `[N, d]` and could
+be any real-world data set. `interv_mask` is a binary mask of the same shape that indicates
+whether or not a variable was intervened upon in a given sample (`interv_mask=None` indicates observational data and is
+equivalent to `interv_mask=jax.numpy.zeros_like(x)`).
 
 
 ## Example Notebooks
 
-For a working example of the above,  we recommend opening our example notebook in Google Colab, which runs **directly from your browser**. 
-Whenever a GPU backend is available to JAX, the implementation will automatically leverage it to accelerate its computations. 
-Thus, selecting the GPU runtime available in Google Colab will make inference significantly faster.
+Try out a working example notebook in Google Colab, which runs **directly from your browser**. 
+Whenever a GPU backend is available to JAX, `dibs` will automatically leverage it to accelerate its computations,
+so you can select the free GPU runtime available in Google Colab for speed-up.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/larslorch/dibs/blob/master/examples/dibs_joint_colab.ipynb)
 
