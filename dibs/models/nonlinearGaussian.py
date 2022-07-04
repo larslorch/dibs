@@ -53,7 +53,7 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
         sig_bias: std dev of weight initialization
         bias: bias of linear layer
         activation: activation function str; choices: `sigmoid`, `tanh`, `relu`, `leakyrelu`
-    
+
     Returns:
         stax.serial neural net object
     """
@@ -89,7 +89,7 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
         modules += [DenseNoBias(1, W_init=normal(stddev=sig_weight))]
 
     return stax.serial(*modules)
-    
+
 
 class DenseNonlinearGaussian:
     """
@@ -130,20 +130,20 @@ class DenseNonlinearGaussian:
 
         # init single neural net function for one variable with jax stax
         self.nn_init_random_params, nn_forward = makeDenseNet(
-            hidden_layers=self.hidden_layers, 
+            hidden_layers=self.hidden_layers,
             sig_weight=self.sig_param,
             sig_bias=self.sig_param,
             activation=self.activation,
             bias=self.bias)
-        
+
         # [?], [N, d] -> [N,]
         self.nn_forward = lambda theta, x: nn_forward(theta, x).squeeze(-1)
-        
+
         # vectorize init and forward functions
         self.eltwise_nn_init_random_params = vmap(self.nn_init_random_params, (0, None), 0)
         self.double_eltwise_nn_init_random_params = vmap(self.eltwise_nn_init_random_params, (0, None), 0)
         self.triple_eltwise_nn_init_random_params = vmap(self.double_eltwise_nn_init_random_params, (0, None), 0)
-        
+
         # [d2, ?], [N, d] -> [N, d2]
         self.eltwise_nn_forward = vmap(self.nn_forward, (0, None), 1)
 
@@ -160,7 +160,7 @@ class DenseNonlinearGaussian:
         Returns:
             PyTree of parameter shape
         """
-        
+
         dummy_subkeys = jnp.zeros((n_vars, 2), dtype=jnp.uint32)
         _, theta = self.eltwise_nn_init_random_params(dummy_subkeys, (n_vars, )) # second arg is `input_shape` of NN forward pass
 
@@ -195,7 +195,7 @@ class DenseNonlinearGaussian:
 
         else:
             raise ValueError(f"invalid shape size for nn param initialization {shape}")
-            
+
         # to float64
         prec64 = 'JAX_ENABLE_X64' in os.environ and os.environ['JAX_ENABLE_X64'] == 'True'
         theta = tree_map(lambda arr: arr.astype(jnp.float64 if prec64 else jnp.float32), theta)
@@ -284,7 +284,7 @@ class DenseNonlinearGaussian:
             first_weight_logprobs,  = logprobs[0]
             logprobs[0] = (first_weight_logprobs * g.T[:, :, None],)
 
-        # sum logprobs of every parameter tensor and add all up 
+        # sum logprobs of every parameter tensor and add all up
         return tree_reduce(jnp.add, tree_map(jnp.sum, logprobs))
 
 
@@ -301,18 +301,19 @@ class DenseNonlinearGaussian:
         Returns:
             log prob
         """
+        assert x.shape == interv_targets.shape
 
         # [d2, N, d] = [1, N, d] * [d2, 1, d] mask non-parent entries of each j
         all_x_msk = x[None] * g.T[:, None]
 
-        # [N, d2] NN forward passes for parameters of each param j 
+        # [N, d2] NN forward passes for parameters of each param j
         all_means = self.double_eltwise_nn_forward(theta, all_x_msk)
 
         # sum scores for all nodes and data
         return jnp.sum(
             jnp.where(
-                # [1, n_vars]
-                interv_targets[None, ...],
+                # [n_observations, n_vars]
+                interv_targets,
                 0.0,
                 # [n_observations, n_vars]
                 jax_normal.logpdf(x=x, loc=all_means, scale=jnp.sqrt(self.obs_noise))
@@ -336,21 +337,20 @@ class DenseNonlinearGaussian:
         return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
 
 
-    def observational_log_joint_prob(self, g, theta, x, rng):
-        """Computes observational joint likelihood :math:`\\log p(\\Theta, D | G)``
+    def interventional_log_joint_prob(self, g, theta, x, interv_targets, rng):
+        """Computes interventional joint likelihood :math:`\\log p(\\Theta, D | G)``
 
         Arguments:
             g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
             theta (Any): parameter PyTree
             x (ndarray): observational data of shape ``[n_observations, n_vars]``
+            interv_targets (ndarray): indicator mask of interventions of shape ``[n_observations, n_vars]``
             rng (ndarray): rng; skeleton for minibatching (TBD)
 
         Returns:
             log prob of shape ``[1,]``
         """
         log_prob_theta = self.log_prob_parameters(g=g, theta=theta)
-        log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=self.no_interv_targets)
+        log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=interv_targets)
         return log_prob_theta + log_likelihood
-
-
 

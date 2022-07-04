@@ -89,23 +89,38 @@ class BGe:
         submat = mask * m + (1 - mask) * jnp.eye(n_vars)
         return jnp.linalg.slogdet(submat)[1]
 
-    def _log_marginal_likelihood_single(self, j, n_parents, R, g, x, small_t):
+    def _log_marginal_likelihood_single(self, j, n_parents, g, x, interv_targets):
         """
         Computes node-specific score of BGe marginal likelihood. ``jax.jit``-compilable
 
         Args:
             j (int): node index for score
             n_parents (int): number of parents of node ``j``
-            R (ndarray): internal matrix for BGe score of shape ``[d, d]``
             g (ndarray): adjacency matrix of shape ``[d, d]
             x (ndarray): observations matrix of shape ``[N, d]``
-            small_t (float): internal value for BGe score ``[1, ]``
+            interv_targets (ndarray): intervention indicator matrix of shape ``[N, d]``
 
         Returns:
             BGe score for node ``j``
         """
 
-        N, d = x.shape
+        d = x.shape[-1]
+        small_t = (self.alpha_mu * (self.alpha_lambd - d - 1)) / (self.alpha_mu + 1)
+        T = small_t * jnp.eye(d)
+
+        # mask rows of `x` where j is intervened upon to 0.0 and compute (remaining) number of observations `N`
+        x = x * (1 - interv_targets[..., j, None])
+        N = (1 - interv_targets[..., j]).sum()
+
+        # covariance matrix of non-intervened rows
+        x_bar = jnp.where(jnp.isclose(N, 0), jnp.zeros((1, d)), x.sum(axis=0, keepdims=True) / N)
+        x_center = (x - x_bar) * (1 - interv_targets[..., j, None])
+        s_N = x_center.T @ x_center  # [d, d]
+
+        # Kuipers et al. (2014) state `R` wrongly in the paper, using `alpha_lambd` rather than `alpha_mu`
+        # their supplementary contains the correct term
+        R = T + s_N + ((N * self.alpha_mu) / (N + self.alpha_mu)) * \
+            ((x_bar - self.mean_obs).T @ (x_bar - self.mean_obs))  # [d, d]
 
         parents = g[:, j]
         parents_and_j = (g + jnp.eye(d))[:, j]
@@ -128,48 +143,34 @@ class BGe:
                 self._slogdet_jax(R, parents_and_j)
         )
 
-        return log_gamma_term + log_term_r
+        # return neutral sum element (0) if no observations (N=0)
+        return jnp.where(jnp.isclose(N, 0), 0.0, log_gamma_term + log_term_r)
 
-    def log_marginal_likelihood(self, *, g, x, interv_targets=None):
+    def log_marginal_likelihood(self, *, g, x, interv_targets):
         """Computes BGe marginal likelihood :math:`\\log p(D | G)`` in closed-form;
         ``jax.jit``-compatible
 
         Args:
            g (ndarray): adjacency matrix of shape ``[d, d]``
            x (ndarray): observations of shape ``[N, d]``
-           interv_targets (ndarray, optional): boolean mask of shape ``[d, ]`` of whether or not
-               a node was intervened upon. Intervened nodes are ignored in likelihood computation
+           interv_targets (ndarray): boolean mask of shape ``[N, d]`` of whether or not
+               a node was intervened upon in a given sample. Intervened nodes are ignored in likelihood computation
 
         Returns:
            BGe Score
         """
-        N, d = x.shape
+        # indices
+        _, d = x.shape
+        nodes_idx = jnp.arange(d)
 
-        # intervention
-        if interv_targets is None:
-            interv_targets = jnp.zeros(d).astype(bool)
-
-        # pre-compute matrices
-        small_t = (self.alpha_mu * (self.alpha_lambd - d - 1)) / (self.alpha_mu + 1)
-        T = small_t * jnp.eye(d)
-        x_bar = x.mean(axis=0, keepdims=True)
-        x_center = x - x_bar
-        s_N = x_center.T @ x_center  # [d, d]
-
-        # Kuipers et al. (2014) state `R` wrongly in the paper, using `alpha_lambd` rather than `alpha_mu`
-        # their supplementary contains the correct term
-        R = T + s_N + ((N * self.alpha_mu) / (N + self.alpha_mu)) * \
-            ((x_bar - self.mean_obs).T @ (x_bar - self.mean_obs))  # [d, d]
-
-        # compute number of parents for each node
+        # number of parents for each node
         n_parents_all = g.sum(axis=0)
 
-        # sum scores for all nodes (batched over `j` and `n_parents` dimensions)
+        # sum scores for all nodes [d,]
         scores = vmap(self._log_marginal_likelihood_single,
-                      (0, 0, None, None, None, None), 0)(jnp.arange(d), n_parents_all, R, g, x, small_t)
+                      (0, 0, None, None, None), 0)(nodes_idx, n_parents_all, g, x, interv_targets)
 
-        return jnp.sum(jnp.where(interv_targets, 0.0, scores))
-
+        return scores.sum(0)
 
     """
     Distributions used by DiBS for inference:  prior and marginal likelihood 
@@ -187,8 +188,8 @@ class BGe:
         """
         return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
 
-    def observational_log_marginal_prob(self, g, _, x, rng):
-        """Computes observational marginal likelihood :math:`\\log p(D | G)`` in closed-form;
+    def interventional_log_marginal_prob(self, g, _, x, interv_targets, rng):
+        """Computes interventional marginal likelihood :math:`\\log p(D | G)`` in closed-form;
         ``jax.jit``-compatible
 
         To unify the function signatures for the marginal and joint inference classes
@@ -201,19 +202,20 @@ class BGe:
                 Entries must be binary and of type ``jnp.int32``
             _:
             x (ndarray): observational data of shape ``[n_observations, n_vars]``
+            interv_targets (ndarray): indicator mask of interventions of shape ``[n_observations, n_vars]``
             rng (ndarray): rng; skeleton for minibatching (TBD)
 
         Returns:
             BGe score of shape ``[1,]``
         """
-        return self.log_marginal_likelihood(g=g, x=x, interv_targets=self.no_interv_targets)
+        return self.log_marginal_likelihood(g=g, x=x, interv_targets=interv_targets)
 
 
 class LinearGaussian:
     """
     Linear Gaussian BN model corresponding to linear structural equation model (SEM) with additive Gaussian noise.
 
-    Each variable distributed as Gaussian with mean being the linear combination of its parents 
+    Each variable distributed as Gaussian with mean being the linear combination of its parents
     weighted by a Gaussian parameter vector (i.e., with Gaussian-valued edges).
     The noise variance at each node is equal by default, which implies the causal structure is identifiable.
 
@@ -271,7 +273,7 @@ class LinearGaussian:
         theta += jnp.sign(theta) * self.min_edge
         return theta
 
-    
+
     def sample_obs(self, *, key, n_samples, g, theta, toporder=None, interv=None):
         """Samples ``n_samples`` observations given graph ``g`` and parameters ``theta``
 
@@ -302,7 +304,7 @@ class LinearGaussian:
             if j in interv.keys():
                 x = x.at[index[:, j]].set(interv[j])
                 continue
-            
+
             # regular ancestral sampling
             parent_edges = g.incident(j, mode='in')
             parents = list(g.es[e].source for e in parent_edges)
@@ -315,7 +317,7 @@ class LinearGaussian:
                 x = x.at[index[:, j]].set(z[:, j])
 
         return x
-    
+
     """
     The following functions need to be functionally pure and @jit-able
     """
@@ -327,7 +329,7 @@ class LinearGaussian:
         Arguments:
             theta (ndarray): parameter matrix of shape ``[n_vars, n_vars]``
             g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
-            
+
         Returns:
             log prob
         """
@@ -342,16 +344,18 @@ class LinearGaussian:
             x (ndarray): observations of shape ``[n_observations, n_vars]``
             theta (ndarray): parameters of shape ``[n_vars, n_vars]``
             g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
-            interv_targets (ndarray): binary intervention indicator vector of shape ``[n_vars, ]``
+            interv_targets (ndarray): binary intervention indicator vector of shape ``[n_observations, n_vars]``
 
         Returns:
             log prob
         """
-        # sum scores for all nodes
+        assert x.shape == interv_targets.shape
+
+        # sum scores for all nodes and data
         return jnp.sum(
             jnp.where(
-                # [1, n_vars]
-                interv_targets[None, ...],
+                # [n_observations, n_vars]
+                interv_targets,
                 0.0,
                 # [n_observations, n_vars]
                 jax_normal.logpdf(x=x, loc=x @ (g * theta), scale=jnp.sqrt(self.obs_noise))
@@ -376,19 +380,20 @@ class LinearGaussian:
         return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
 
 
-    def observational_log_joint_prob(self, g, theta, x, rng):
-        """Computes observational joint likelihood :math:`\\log p(\\Theta, D | G)``
+    def interventional_log_joint_prob(self, g, theta, x, interv_targets, rng):
+        """Computes interventional joint likelihood :math:`\\log p(\\Theta, D | G)``
 
         Arguments:
             g (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
             theta (ndarray): parameter matrix of shape ``[n_vars, n_vars]``
             x (ndarray): observational data of shape ``[n_observations, n_vars]``
+            interv_targets (ndarray): indicator mask of interventions of shape ``[n_observations, n_vars]``
             rng (ndarray): rng; skeleton for minibatching (TBD)
 
         Returns:
             log prob of shape ``[1,]``
         """
         log_prob_theta = self.log_prob_parameters(g=g, theta=theta)
-        log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=self.no_interv_targets)
+        log_likelihood = self.log_likelihood(g=g, theta=theta, x=x, interv_targets=interv_targets)
         return log_prob_theta + log_likelihood
 

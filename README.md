@@ -78,14 +78,17 @@ that are transported by SVGD during inference.
 
 ## Change Log
 
-- **Mar 14, 2022**: Published to PyPI
+- **4 Jul 2022**: Inference from interventional data via the interventional log (marginal) likelihood,
+assuming known, hard interventions. To model soft or random interventions, the likelihoods in the model 
+classes in `dibs/models/` can be easily modified.
 
+- **14 Mar 2022**: Published to PyPI
 
-- **Mar 12, 2022**: Extended BGe marginal likelihood to be well-defined inside the probability simplex. 
+- **12 Mar 2022**: Extended BGe marginal likelihood to be well-defined inside the probability simplex. 
 The computation remains *exact* for binary entries but is well-behaved for soft relaxations of the graph.
 This allows reparameterization (Gumbel-softmax) gradient estimation for the BGe score.
 
-- **Dec 14, 2021**: Documentation added
+- **14 Dec 2021**: Documentation added
 
 ## Branches and Custom Installation 
 
