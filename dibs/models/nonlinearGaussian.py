@@ -7,21 +7,8 @@ from jax import random
 from jax.scipy.stats import norm as jax_normal
 from jax.tree_util import tree_map, tree_reduce
 from jax.nn.initializers import normal
-
-try:
-    import jax.example_libraries.stax as stax
-    from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
-except ImportError:
-    # for jax <= 0.2.24
-    import jax.experimental.stax as stax
-    from jax.experimental.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
-
-try:
-    from jax.numpy import index_exp as index
-except ImportError:
-    # for jax <= 0.3.2
-    from jax.ops import index
-
+import jax.example_libraries.stax as stax
+from jax.example_libraries.stax import Dense, Sigmoid, LeakyRelu, Relu, Tanh
 
 from dibs.graph_utils import graph_to_mat
 from dibs.utils.tree import tree_shapes
@@ -235,7 +222,7 @@ class DenseNonlinearGaussian:
 
             # intervention
             if j in interv.keys():
-                x = x.at[index[:, j]].set(interv[j])
+                x = x.at[:, j].set(interv[j])
                 continue
 
             # regular ancestral sampling
@@ -251,9 +238,9 @@ class DenseNonlinearGaussian:
                 means = self.eltwise_nn_forward(theta, x_msk)
 
                 # [N,] update j only
-                x = x.at[index[:, j]].set(means[:, j] + z[:, j])
+                x = x.at[:, j].set(means[:, j] + z[:, j])
             else:
-                x = x.at[index[:, j]].set(z[:, j])
+                x = x.at[:, j].set(z[:, j])
 
         return x
 

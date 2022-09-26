@@ -2,7 +2,7 @@ import functools
 
 import jax.numpy as jnp
 from jax import jit
-from jax.tree_util import tree_map, tree_multimap, tree_reduce
+from jax.tree_util import tree_map, tree_reduce
 
 
 def expand_by(arr, n):
@@ -74,10 +74,8 @@ def leftsel(mat, mask, maskval=0.0):
         4 6 0
         7 9 0
     """
-    valid_indices = jnp.where(
-        mask, jnp.arange(mask.shape[0]), mask.shape[0])
-    padded_mat = jnp.concatenate(
-        [mat, maskval * jnp.ones((mat.shape[0], 1))], axis=1)
+    valid_indices = jnp.where(mask, jnp.arange(mask.shape[0]), mask.shape[0])
+    padded_mat = jnp.concatenate([mat, maskval * jnp.ones((mat.shape[0], 1))], axis=1)
     padded_valid_mat = padded_mat[:, jnp.sort(valid_indices)]
     return padded_valid_mat
 
@@ -110,7 +108,7 @@ def squared_norm_pytree(x, y):
         shape []
     """
 
-    diff = tree_multimap(jnp.subtract, x, y)
+    diff = tree_map(jnp.subtract, x, y)
     squared_norm_ind = tree_map(lambda leaf: jnp.square(leaf).sum(), diff)
     squared_norm = tree_reduce(jnp.add, squared_norm_ind)
     return squared_norm

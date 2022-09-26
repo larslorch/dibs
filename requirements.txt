@@ -1,6 +1,6 @@
 imageio==2.9.0
-jax>=0.2.8  # compatible with Apple silicon: jax==0.2.10
-jaxlib>=0.1.59  # compatible with Apple silicon: jaxlib==0.1.60
+jax>=0.2.25
+jaxlib>=0.1.59
 jupyter==1.0.0
 matplotlib==3.3.3
 numpy>=1.18

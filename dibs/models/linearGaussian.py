@@ -3,11 +3,6 @@ from jax import random, vmap
 from jax.scipy.stats import norm as jax_normal
 from jax.scipy.special import gammaln
 
-try:
-    from jax.numpy import index_exp as index
-except ImportError:
-    # for jax <= 0.3.2
-    from jax.ops import index
 
 class BGe:
     """
@@ -302,7 +297,7 @@ class LinearGaussian:
 
             # intervention
             if j in interv.keys():
-                x = x.at[index[:, j]].set(interv[j])
+                x = x.at[:, j].set(interv[j])
                 continue
 
             # regular ancestral sampling
@@ -311,10 +306,10 @@ class LinearGaussian:
 
             if parents:
                 mean = x[:, jnp.array(parents)] @ theta[jnp.array(parents), j]
-                x = x.at[index[:, j]].set(mean + z[:, j])
+                x = x.at[:, j].set(mean + z[:, j])
 
             else:
-                x = x.at[index[:, j]].set(z[:, j])
+                x = x.at[:, j].set(z[:, j])
 
         return x
 

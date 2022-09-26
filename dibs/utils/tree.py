@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_map, tree_multimap, tree_reduce
+from jax.tree_util import tree_flatten, tree_unflatten, tree_map, tree_reduce
 from jax import random
 
 def tree_index(pytree, idx):
@@ -20,7 +20,7 @@ def tree_zip_leading(pytree_list):
     """
     Converts n pytrees without leading dimension into one pytree with leading dim [n, ...]
     """
-    return tree_multimap(lambda *args: jnp.stack([*args]) if len(args) > 1 else tree_expand_leading_by(*args, 1), *pytree_list)
+    return tree_map(lambda *args: jnp.stack([*args]) if len(args) > 1 else tree_expand_leading_by(*args, 1), *pytree_list)
     
 
 def tree_unzip_leading(pytree, n):

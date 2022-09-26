@@ -27,7 +27,6 @@ pip install dibs-lib
 
 The documentation is linked here: 
 [**Documentation**](https://differentiable-bayesian-structure-learning.readthedocs.io/).
-If you work on Apple Silicon, we recommend using the compatible JAX versions `jax==0.2.10 jaxlib==0.1.60`
 
 ## Quick Start
 
@@ -111,8 +110,6 @@ pip install -e .
 ```
 
 ## Reference
-   
-If you find this code useful, please cite our paper: 
 
 ```
 @article{lorch2021dibs,

@@ -4,14 +4,9 @@ import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, random, grad
-from jax.tree_util import tree_map, tree_multimap
+from jax.tree_util import tree_map
 from jax.scipy.special import logsumexp
-try:
-    from jax.example_libraries import optimizers
-except ImportError:
-    # for jax <= 0.2.24
-    from jax.experimental import optimizers
-
+from jax.example_libraries import optimizers
 
 from dibs.inference.dibs import DiBS
 from dibs.kernel import AdditiveFrobeniusSEKernel, JointAdditiveFrobeniusSEKernel
@@ -645,18 +640,15 @@ class JointDiBS(DiBS):
 
         # compute terms in sum
         weighted_gradient_ascent = tree_map(
-            lambda leaf_theta_grad:
-                expand_by(kxx, leaf_theta_grad.ndim - 1) * leaf_theta_grad,
+            lambda leaf_theta_grad: expand_by(kxx, leaf_theta_grad.ndim - 1) * leaf_theta_grad,
             grad_log_prob_theta)
 
         repulsion = self._eltwise_grad_kernel_theta(z, theta, single_z, single_theta)
 
         # average and negate (for optimizer)
-        return  tree_multimap(
-            lambda grad_asc_leaf, repuls_leaf:
-                - (grad_asc_leaf + repuls_leaf).mean(axis=0),
-            weighted_gradient_ascent,
-            repulsion)
+        return  tree_map(
+            lambda grad_asc_leaf, repuls_leaf: - (grad_asc_leaf + repuls_leaf).mean(axis=0),
+            weighted_gradient_ascent, repulsion)
 
 
     def _parallel_update_theta(self, *args):

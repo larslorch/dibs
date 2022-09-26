@@ -3,12 +3,6 @@ import random as pyrandom
 import jax.numpy as jnp
 from jax import random
 
-try:
-    from jax.numpy import index_exp as index
-except ImportError:
-    # for jax <= 0.3.2
-    from jax.ops import index
-
 from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
 
 
@@ -232,12 +226,10 @@ class UniformDAGDistributionRejection:
             ``iGraph.graph`` / ``jnp.array``:
             DAG
         """
-        mask_idx = index[..., jnp.arange(self.n_vars), jnp.arange(self.n_vars)]
-
         while True:
             key, subk = random.split(key)
             mat = random.bernoulli(subk, p=0.5, shape=(self.n_vars, self.n_vars)).astype(jnp.int32)
-            mat = mat.at[mask_idx].set(0)
+            mat = mat.at[..., jnp.arange(self.n_vars), jnp.arange(self.n_vars)].set(0)
 
             if mat_is_dag(mat):
                 if return_mat:
