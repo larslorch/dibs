@@ -88,33 +88,6 @@ class DiBS:
     Backbone functionality
     """
 
-    def vec_to_mat(self, z, n_vars):
-        """
-        Reshapes particle to latent adjacency matrix form. Last dim gets shaped into matrix
-
-        Args:
-            z (ndarray): flattened matrix of shape ``[..., n_vars * n_vars]``
-
-        Returns:
-            matrix of shape ``[..., d, d]``
-        """
-        return z.reshape(*z.shape[:-1], n_vars, n_vars)
-
-
-    def mat_to_vec(self, w):
-        """
-        Reshapes latent adjacency matrix form to particle. Last two dims get flattened into vector
-
-        Args:
-            w (ndarray): matrix of shape ``[..., d, d]``
-
-        Returns:
-            flattened matrix of shape ``[..., d * d]``
-        """
-        n_vars = w.shape[-1]
-        return w.reshape(*w.shape[:-2], n_vars * n_vars)
-
-
     def particle_to_g_lim(self, z):
         """
         Returns :math:`G` corresponding to :math:`\\alpha = \\infty` for particles `z`
@@ -146,8 +119,8 @@ class DiBS:
             an array of matrices sampled according to ``p`` of shape ``[n_samples, d, d]``
         """
         n_vars = p.shape[-1]
-        g_samples = self.vec_to_mat(random.bernoulli(
-            subk, p=self.mat_to_vec(p), shape=(n_samples, n_vars * n_vars)), n_vars).astype(jnp.int32)
+        g_samples = random.bernoulli(
+            subk, p=p, shape=(n_samples, n_vars, n_vars)).astype(jnp.int32)
 
         # mask diagonal since it is explicitly not modeled
         return zero_diagonal(g_samples)
