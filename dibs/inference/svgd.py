@@ -344,7 +344,7 @@ class MarginalDiBS(DiBS):
         # empirical distribution using counts
         logp = jnp.log(counts) - jnp.log(N)
 
-        return ParticleDistribution(logp=logp, g=g)
+        return ParticleDistribution(logp=logp, g=unique)
 
     def get_mixture(self, g):
         """
