@@ -9,6 +9,11 @@ from dibs.graph_utils import acyclic_constr_nograd
 from dibs.utils.func import expand_by
 
 
+def zero_diagonal(g):
+    d = g.shape[-1]
+    return g.at[..., jnp.arange(d), jnp.arange(d)].set(0)
+
+
 class DiBS:
     """
     This class implements the backbone for DiBS, i.e. all gradient estimators and sampling
@@ -124,9 +129,8 @@ class DiBS:
         scores = jnp.einsum('...ik,...jk->...ij', u, v)
         g_samples = (scores > 0).astype(jnp.int32)
 
-        # zero diagonal
-        g_samples = g_samples.at[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])].set(0)
-        return g_samples
+        # mask diagonal since it is explicitly not modeled
+        return zero_diagonal(g_samples)
 
 
     def sample_g(self, p, subk, n_samples):
@@ -146,8 +150,7 @@ class DiBS:
             subk, p=self.mat_to_vec(p), shape=(n_samples, n_vars * n_vars)), n_vars).astype(jnp.int32)
 
         # mask diagonal since it is explicitly not modeled
-        g_samples = g_samples.at[..., jnp.arange(p.shape[-1]), jnp.arange(p.shape[-1])].set(0)
-        return g_samples
+        return zero_diagonal(g_samples)
 
     def particle_to_soft_graph(self, z, eps, t):
         """
@@ -168,9 +171,7 @@ class DiBS:
         soft_graph = sigmoid(self.tau * (eps + self.alpha(t) * scores))
 
         # mask diagonal since it is explicitly not modeled
-        n_vars = soft_graph.shape[-1]
-        soft_graph = soft_graph.at[..., jnp.arange(n_vars), jnp.arange(n_vars)].set(0.0)
-        return soft_graph
+        return zero_diagonal(soft_graph)
 
 
     def particle_to_hard_graph(self, z, eps, t):
@@ -191,9 +192,7 @@ class DiBS:
         hard_graph = ((self.tau * (eps + self.alpha(t) * scores)) > 0.0).astype(jnp.float32)
 
         # mask diagonal since it is explicitly not modeled
-        n_vars = hard_graph.shape[-1]
-        hard_graph = hard_graph.at[..., jnp.arange(n_vars), jnp.arange(n_vars)].set(0.0)
-        return hard_graph
+        return zero_diagonal(hard_graph)
 
 
     """
@@ -216,8 +215,7 @@ class DiBS:
         probs = sigmoid(self.alpha(t) * scores)
 
         # mask diagonal since it is explicitly not modeled
-        probs = probs.at[..., jnp.arange(probs.shape[-1]), jnp.arange(probs.shape[-1])].set(0.0)
-        return probs
+        return zero_diagonal(probs)
 
 
     def edge_log_probs(self, z, t):
@@ -237,9 +235,7 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         # NOTE: this is not technically log(p), but the way `edge_log_probs_` is used, this is correct
-        log_probs = log_probs.at[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])].set(0.0)
-        log_probs_neg = log_probs_neg.at[..., jnp.arange(log_probs_neg.shape[-1]), jnp.arange(log_probs_neg.shape[-1])].set(0.0)
-        return log_probs, log_probs_neg
+        return zero_diagonal(log_probs), zero_diagonal(log_probs_neg)
 
 
 
