@@ -4,6 +4,26 @@ from jax.scipy.stats import norm as jax_normal
 from jax.scipy.special import gammaln
 
 
+def _slogdet_jax(self, m, parents):
+    """
+    Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
+    by masking everything but the submatrix and adding a diagonal of ones everywhere else
+    to obtain the valid determinant
+
+    Args:
+        m (ndarray): matrix of shape ``[d, d]``
+        parents (ndarray): boolean indicator of parents of shape ``[d, ]``
+
+    Returns:
+        natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
+    """
+
+    n_vars = parents.shape[0]
+    mask = jnp.einsum('...i,...j->...ij', parents, parents)
+    submat = mask * m + (1 - mask) * jnp.eye(n_vars)
+    return jnp.linalg.slogdet(submat)[1]
+
+
 class BGe:
     """
     Linear Gaussian BN model corresponding to linear structural equation model (SEM) with additive Gaussian noise.
@@ -65,25 +85,6 @@ class BGe:
     The following functions need to be functionally pure and jax.jit-compilable
     """
 
-    def _slogdet_jax(self, m, parents):
-        """
-        Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
-        by masking everything but the submatrix and adding a diagonal of ones everywhere else
-        to obtain the valid determinant
-
-        Args:
-            m (ndarray): matrix of shape ``[d, d]``
-            parents (ndarray): boolean indicator of parents of shape ``[d, ]``
-
-        Returns:
-            natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
-        """
-
-        n_vars = parents.shape[0]
-        mask = jnp.einsum('...i,...j->...ij', parents, parents)
-        submat = mask * m + (1 - mask) * jnp.eye(n_vars)
-        return jnp.linalg.slogdet(submat)[1]
-
     def _log_marginal_likelihood_single(self, j, n_parents, g, x, interv_targets):
         """
         Computes node-specific score of BGe marginal likelihood. ``jax.jit``-compilable
@@ -133,9 +134,9 @@ class BGe:
         log_term_r = (
             # log det(R_II)^(..) / det(R_JJ)^(..)
                 0.5 * (N + self.alpha_lambd - d + n_parents) *
-                self._slogdet_jax(R, parents)
+                _slogdet_jax(R, parents)
                 - 0.5 * (N + self.alpha_lambd - d + n_parents + 1) *
-                self._slogdet_jax(R, parents_and_j)
+                _slogdet_jax(R, parents_and_j)
         )
 
         # return neutral sum element (0) if no observations (N=0)
