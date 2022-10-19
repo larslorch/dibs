@@ -60,8 +60,6 @@ class BGe:
                  alpha_mu=None,
                  alpha_lambd=None,
                  ):
-        super(BGe, self).__init__()
-
         self.graph_dist = graph_dist
         self.n_vars = graph_dist.n_vars
 
@@ -216,8 +214,6 @@ class LinearGaussian:
     """
 
     def __init__(self, *, graph_dist, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5):
-        super(LinearGaussian, self).__init__()
-
         self.graph_dist = graph_dist
         self.n_vars = graph_dist.n_vars
         self.obs_noise = obs_noise

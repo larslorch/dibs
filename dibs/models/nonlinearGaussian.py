@@ -103,8 +103,6 @@ class DenseNonlinearGaussian:
 
     """
     def __init__(self, *, graph_dist, hidden_layers, obs_noise=0.1, sig_param=1.0, activation='relu', bias=True):
-        super(DenseNonlinearGaussian, self).__init__()
-
         self.graph_dist = graph_dist
         self.n_vars = graph_dist.n_vars
         self.obs_noise = obs_noise

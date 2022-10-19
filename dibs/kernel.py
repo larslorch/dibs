@@ -14,8 +14,6 @@ class AdditiveFrobeniusSEKernel:
     """
 
     def __init__(self, *, h=20.0, scale=1.0):
-        super(AdditiveFrobeniusSEKernel, self).__init__()
-
         self.h = h
         self.scale = scale
 
@@ -46,8 +44,6 @@ class JointAdditiveFrobeniusSEKernel:
     """
 
     def __init__(self, *, h_latent=5.0, h_theta=500.0, scale_latent=1.0, scale_theta=1.0):
-        super(JointAdditiveFrobeniusSEKernel, self).__init__()
-
         self.h_latent = h_latent
         self.h_theta = h_theta
         self.scale_latent = scale_latent

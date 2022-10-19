@@ -24,8 +24,6 @@ class ErdosReniDAGDistribution:
     """
 
     def __init__(self, n_vars, n_edges_per_node=2):
-        super(ErdosReniDAGDistribution, self).__init__()
-
         self.n_vars = n_vars
         self.n_edges = n_edges_per_node * n_vars
         self.p = self.n_edges / ((self.n_vars * (self.n_vars - 1)) / 2)
@@ -125,8 +123,6 @@ class ScaleFreeDAGDistribution:
     """
 
     def __init__(self, n_vars, verbose=False, n_edges_per_node=2):
-        super(ScaleFreeDAGDistribution, self).__init__()
-
         self.n_vars = n_vars
         self.n_edges_per_node = n_edges_per_node
         self.verbose = verbose
@@ -212,7 +208,6 @@ class UniformDAGDistributionRejection:
     """
 
     def __init__(self, n_vars):
-        super(UniformDAGDistributionRejection, self).__init__()
         self.n_vars = n_vars 
 
     def sample_G(self, key, return_mat=False):

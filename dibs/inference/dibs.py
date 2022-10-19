@@ -67,8 +67,6 @@ class DiBS:
                  score_function_baseline=0.0,
                  latent_prior_std=None,
                  verbose=False):
-        super(DiBS, self).__init__()
-
         self.x = x
         self.interv_mask = interv_mask
         self.n_vars = x.shape[-1]
