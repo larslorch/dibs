@@ -87,7 +87,7 @@ class MarginalDiBS(DiBS):
         super(MarginalDiBS, self).__init__(
             x=x,
             interv_mask=interv_mask,
-            log_graph_prior=inference_model.log_graph_prior,
+            log_graph_prior=inference_model.graph_dist.unnormalized_log_prob_soft,
             log_joint_prob=inference_model.interventional_log_marginal_prob,
             alpha_linear=alpha_linear,
             beta_linear=beta_linear,
@@ -447,7 +447,7 @@ class JointDiBS(DiBS):
         super(JointDiBS, self).__init__(
             x=x,
             interv_mask=interv_mask,
-            log_graph_prior=inference_model.log_graph_prior,
+            log_graph_prior=inference_model.graph_dist.unnormalized_log_prob_soft,
             log_joint_prob=inference_model.interventional_log_joint_prob,
             alpha_linear=alpha_linear,
             beta_linear=beta_linear,
