@@ -104,7 +104,7 @@ class MarginalDiBS(DiBS):
 
         # functions for post-hoc likelihood evaluations
         self.eltwise_log_marginal_likelihood_observ = vmap(lambda g, x_ho:
-             inference_model.interventional_log_marginal_prob(g, None, x_ho, jnp.zeros_like(self.x), None), (0, None), 0)
+             inference_model.interventional_log_marginal_prob(g, None, x_ho, jnp.zeros_like(x_ho), None), (0, None), 0)
         self.eltwise_log_marginal_likelihood_interv = vmap(lambda g, x_ho, interv_msk_ho:
              inference_model.interventional_log_marginal_prob(g, None, x_ho, interv_msk_ho, None), (0, None, None), 0)
 
@@ -464,7 +464,7 @@ class JointDiBS(DiBS):
 
         # functions for post-hoc likelihood evaluations
         self.eltwise_log_likelihood_observ = vmap(lambda g, theta, x_ho:
-            inference_model.interventional_log_joint_prob(g, theta, x_ho, jnp.zeros_like(self.x), None), (0, 0, None), 0)
+            inference_model.interventional_log_joint_prob(g, theta, x_ho, jnp.zeros_like(x_ho), None), (0, 0, None), 0)
         self.eltwise_log_likelihood_interv = vmap(lambda g, theta, x_ho, interv_msk_ho:
             inference_model.interventional_log_joint_prob(g, theta, x_ho, interv_msk_ho, None), (0, 0, None, None), 0)
 
