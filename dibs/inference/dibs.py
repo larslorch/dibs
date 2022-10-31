@@ -6,12 +6,7 @@ import jax.lax as lax
 from jax.tree_util import tree_map
 
 from dibs.graph_utils import acyclic_constr_nograd
-from dibs.utils.func import expand_by
-
-
-def zero_diagonal(g):
-    d = g.shape[-1]
-    return g.at[..., jnp.arange(d), jnp.arange(d)].set(0)
+from dibs.utils.func import expand_by, zero_diagonal
 
 
 class DiBS:

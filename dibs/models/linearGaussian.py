@@ -2,26 +2,7 @@ import jax.numpy as jnp
 from jax import random, vmap
 from jax.scipy.stats import norm as jax_normal
 from jax.scipy.special import gammaln
-
-
-def _slogdet_jax(self, m, parents):
-    """
-    Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
-    by masking everything but the submatrix and adding a diagonal of ones everywhere else
-    to obtain the valid determinant
-
-    Args:
-        m (ndarray): matrix of shape ``[d, d]``
-        parents (ndarray): boolean indicator of parents of shape ``[d, ]``
-
-    Returns:
-        natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
-    """
-
-    n_vars = parents.shape[0]
-    mask = jnp.einsum('...i,...j->...ij', parents, parents)
-    submat = mask * m + (1 - mask) * jnp.eye(n_vars)
-    return jnp.linalg.slogdet(submat)[1]
+from dibs.utils.func import _slogdet_jax
 
 
 class BGe:
