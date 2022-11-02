@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax import random
 
 from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
+from dibs.utils.func import zero_diagonal
 
 
 class ErdosReniDAGDistribution:
@@ -224,7 +225,7 @@ class UniformDAGDistributionRejection:
         while True:
             key, subk = random.split(key)
             mat = random.bernoulli(subk, p=0.5, shape=(self.n_vars, self.n_vars)).astype(jnp.int32)
-            mat = mat.at[..., jnp.arange(self.n_vars), jnp.arange(self.n_vars)].set(0)
+            mat = zero_diagonal(mat)
 
             if mat_is_dag(mat):
                 if return_mat:
