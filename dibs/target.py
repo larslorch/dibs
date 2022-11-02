@@ -36,7 +36,7 @@ class Data(NamedTuple):
     g: Any
     theta: Any
     x: Any
-    x_ho :Any
+    x_ho: Any
     x_interv: Any
 
 
@@ -180,11 +180,11 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        graph_dist=graph_dist, obs_noise=obs_noise,
+        n_vars=n_vars, obs_noise=obs_noise,
         mean_edge=mean_edge, sig_edge=sig_edge,
         min_edge=min_edge)
 
-    inference_model = BGe(graph_dist=graph_dist)
+    likelihood_model = BGe(graph_dist=graph_dist)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
@@ -195,7 +195,7 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, inference_model
+    return data, graph_dist, likelihood_model
 
 
 def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -224,12 +224,12 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        graph_dist=graph_dist, obs_noise=obs_noise,
+        n_vars=n_vars, obs_noise=obs_noise,
         mean_edge=mean_edge, sig_edge=sig_edge,
         min_edge=min_edge)
 
-    inference_model = LinearGaussian(
-        graph_dist=graph_dist, obs_noise=obs_noise,
+    likelihood_model = LinearGaussian(
+        n_vars=n_vars, obs_noise=obs_noise,
         mean_edge=mean_edge, sig_edge=sig_edge,
         min_edge=min_edge)
 
@@ -242,7 +242,7 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, inference_model
+    return data, graph_dist, likelihood_model
 
 
 def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -274,12 +274,12 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = DenseNonlinearGaussian(
-        obs_noise=obs_noise, sig_param=sig_param,
-        hidden_layers=hidden_layers, graph_dist=graph_dist)
+        n_vars=n_vars, hidden_layers=hidden_layers,
+        obs_noise=obs_noise, sig_param=sig_param)
 
-    inference_model = DenseNonlinearGaussian(
-        obs_noise=obs_noise, sig_param=sig_param,
-        hidden_layers=hidden_layers, graph_dist=graph_dist)
+    likelihood_model = DenseNonlinearGaussian(
+        n_vars=n_vars, hidden_layers=hidden_layers,
+        obs_noise=obs_noise, sig_param=sig_param)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
@@ -290,4 +290,4 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, inference_model
+    return data, graph_dist, likelihood_model

@@ -25,10 +25,7 @@ class BGe:
     ``jax.jit``-compilable and ``jax.grad``-differentiable by remaining well-defined for soft relaxations of the graph.
 
     Args:
-        graph_dist: Graph model defining prior :math:`\\log p(G)`. Object *has to implement the method*:
-            ``unnormalized_log_prob_soft``.
-            For example: :class:`~dibs.graph.ErdosReniDAGDistribution`
-            or :class:`~dibs.graph.ScaleFreeDAGDistribution`
+        n_vars (int): number of variables (nodes in the graph)
         mean_obs (ndarray, optional): mean parameter of Normal
         alpha_mu (float, optional): precision parameter of Normal
         alpha_lambd (float, optional): degrees of freedom parameter of Wishart
@@ -36,13 +33,12 @@ class BGe:
     """
 
     def __init__(self, *,
-                 graph_dist,
+                 n_vars,
                  mean_obs=None,
                  alpha_mu=None,
                  alpha_lambd=None,
                  ):
-        self.graph_dist = graph_dist
-        self.n_vars = graph_dist.n_vars
+        self.n_vars = n_vars
 
         self.mean_obs = mean_obs or jnp.zeros(self.n_vars)
         self.alpha_mu = alpha_mu or 1.0
@@ -151,18 +147,6 @@ class BGe:
     Distributions used by DiBS for inference:  prior and marginal likelihood 
     """
 
-    def log_graph_prior(self, g_prob):
-        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
-        This function simply binds the function of the provided ``self.graph_dist``.
-
-        Arguments:
-            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
-
-        Returns:
-            log prob
-        """
-        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
-
     def interventional_log_marginal_prob(self, g, _, x, interv_targets, rng):
         """Computes interventional marginal likelihood :math:`\\log p(D | G)`` in closed-form;
         ``jax.jit``-compatible
@@ -195,10 +179,7 @@ class LinearGaussian:
     The noise variance at each node is equal by default, which implies the causal structure is identifiable.
 
     Args:
-        graph_dist: Graph model defining prior :math:`\\log p(G)`. Object *has to implement the method*:
-            ``unnormalized_log_prob_soft``.
-            For example: :class:`~dibs.graph.ErdosReniDAGDistribution`
-            or :class:`~dibs.graph.ScaleFreeDAGDistribution`
+        n_vars (int): number of variables (nodes in the graph)
         obs_noise (float, optional): variance of additive observation noise at nodes
         mean_edge (float, optional): mean of Gaussian edge weight
         sig_edge (float, optional): std dev of Gaussian edge weight
@@ -206,9 +187,8 @@ class LinearGaussian:
 
     """
 
-    def __init__(self, *, graph_dist, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5):
-        self.graph_dist = graph_dist
-        self.n_vars = graph_dist.n_vars
+    def __init__(self, *, n_vars, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5):
+        self.n_vars = n_vars
         self.obs_noise = obs_noise
         self.mean_edge = mean_edge
         self.sig_edge = sig_edge
@@ -339,19 +319,6 @@ class LinearGaussian:
     """
     Distributions used by DiBS for inference:  prior and joint likelihood 
     """
-
-    def log_graph_prior(self, g_prob):
-        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
-        This function simply binds the function of the provided ``self.graph_dist``.
-
-        Arguments:
-            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
-
-        Returns:
-            log prob
-        """
-        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
-
 
     def interventional_log_joint_prob(self, g, theta, x, interv_targets, rng):
         """Computes interventional joint likelihood :math:`\\log p(\\Theta, D | G)``
