@@ -151,6 +151,18 @@ class BGe:
     Distributions used by DiBS for inference:  prior and marginal likelihood 
     """
 
+    def log_graph_prior(self, g_prob):
+        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
+        This function simply binds the function of the provided ``self.graph_dist``.
+
+        Arguments:
+            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
+
+        Returns:
+            log prob
+        """
+        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
+
     def interventional_log_marginal_prob(self, g, _, x, interv_targets, rng):
         """Computes interventional marginal likelihood :math:`\\log p(D | G)`` in closed-form;
         ``jax.jit``-compatible
@@ -327,6 +339,19 @@ class LinearGaussian:
     """
     Distributions used by DiBS for inference:  prior and joint likelihood 
     """
+
+    def log_graph_prior(self, g_prob):
+        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
+        This function simply binds the function of the provided ``self.graph_dist``.
+
+        Arguments:
+            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
+
+        Returns:
+            log prob
+        """
+        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
+
 
     def interventional_log_joint_prob(self, g, theta, x, interv_targets, rng):
         """Computes interventional joint likelihood :math:`\\log p(\\Theta, D | G)``
