@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from jax import random, vmap
 from jax.scipy.stats import norm as jax_normal
 from jax.scipy.special import gammaln
+from dibs.utils.func import _slogdet_jax
 
 
 class BGe:
@@ -40,8 +41,6 @@ class BGe:
                  alpha_mu=None,
                  alpha_lambd=None,
                  ):
-        super(BGe, self).__init__()
-
         self.graph_dist = graph_dist
         self.n_vars = graph_dist.n_vars
 
@@ -64,25 +63,6 @@ class BGe:
     """
     The following functions need to be functionally pure and jax.jit-compilable
     """
-
-    def _slogdet_jax(self, m, parents):
-        """
-        Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
-        by masking everything but the submatrix and adding a diagonal of ones everywhere else
-        to obtain the valid determinant
-
-        Args:
-            m (ndarray): matrix of shape ``[d, d]``
-            parents (ndarray): boolean indicator of parents of shape ``[d, ]``
-
-        Returns:
-            natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
-        """
-
-        n_vars = parents.shape[0]
-        mask = jnp.einsum('...i,...j->...ij', parents, parents)
-        submat = mask * m + (1 - mask) * jnp.eye(n_vars)
-        return jnp.linalg.slogdet(submat)[1]
 
     def _log_marginal_likelihood_single(self, j, n_parents, g, x, interv_targets):
         """
@@ -133,9 +113,9 @@ class BGe:
         log_term_r = (
             # log det(R_II)^(..) / det(R_JJ)^(..)
                 0.5 * (N + self.alpha_lambd - d + n_parents) *
-                self._slogdet_jax(R, parents)
+                _slogdet_jax(R, parents)
                 - 0.5 * (N + self.alpha_lambd - d + n_parents + 1) *
-                self._slogdet_jax(R, parents_and_j)
+                _slogdet_jax(R, parents_and_j)
         )
 
         # return neutral sum element (0) if no observations (N=0)
@@ -227,8 +207,6 @@ class LinearGaussian:
     """
 
     def __init__(self, *, graph_dist, obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5):
-        super(LinearGaussian, self).__init__()
-
         self.graph_dist = graph_dist
         self.n_vars = graph_dist.n_vars
         self.obs_noise = obs_noise

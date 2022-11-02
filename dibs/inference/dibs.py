@@ -6,7 +6,7 @@ import jax.lax as lax
 from jax.tree_util import tree_map
 
 from dibs.graph_utils import acyclic_constr_nograd
-from dibs.utils.func import expand_by
+from dibs.utils.func import expand_by, zero_diagonal
 
 
 class DiBS:
@@ -62,8 +62,6 @@ class DiBS:
                  score_function_baseline=0.0,
                  latent_prior_std=None,
                  verbose=False):
-        super(DiBS, self).__init__()
-
         self.x = x
         self.interv_mask = interv_mask
         self.n_vars = x.shape[-1]
@@ -83,33 +81,6 @@ class DiBS:
     Backbone functionality
     """
 
-    def vec_to_mat(self, z, n_vars):
-        """
-        Reshapes particle to latent adjacency matrix form. Last dim gets shaped into matrix
-
-        Args:
-            z (ndarray): flattened matrix of shape ``[..., n_vars * n_vars]``
-
-        Returns:
-            matrix of shape ``[..., d, d]``
-        """
-        return z.reshape(*z.shape[:-1], n_vars, n_vars)
-
-
-    def mat_to_vec(self, w):
-        """
-        Reshapes latent adjacency matrix form to particle. Last two dims get flattened into vector
-
-        Args:
-            w (ndarray): matrix of shape ``[..., d, d]``
-
-        Returns:
-            flattened matrix of shape ``[..., d * d]``
-        """
-        n_vars = w.shape[-1]
-        return w.reshape(*w.shape[:-2], n_vars * n_vars)
-
-
     def particle_to_g_lim(self, z):
         """
         Returns :math:`G` corresponding to :math:`\\alpha = \\infty` for particles `z`
@@ -124,9 +95,8 @@ class DiBS:
         scores = jnp.einsum('...ik,...jk->...ij', u, v)
         g_samples = (scores > 0).astype(jnp.int32)
 
-        # zero diagonal
-        g_samples = g_samples.at[..., jnp.arange(scores.shape[-1]), jnp.arange(scores.shape[-1])].set(0)
-        return g_samples
+        # mask diagonal since it is explicitly not modeled
+        return zero_diagonal(g_samples)
 
 
     def sample_g(self, p, subk, n_samples):
@@ -142,12 +112,11 @@ class DiBS:
             an array of matrices sampled according to ``p`` of shape ``[n_samples, d, d]``
         """
         n_vars = p.shape[-1]
-        g_samples = self.vec_to_mat(random.bernoulli(
-            subk, p=self.mat_to_vec(p), shape=(n_samples, n_vars * n_vars)), n_vars).astype(jnp.int32)
+        g_samples = random.bernoulli(
+            subk, p=p, shape=(n_samples, n_vars, n_vars)).astype(jnp.int32)
 
         # mask diagonal since it is explicitly not modeled
-        g_samples = g_samples.at[..., jnp.arange(p.shape[-1]), jnp.arange(p.shape[-1])].set(0)
-        return g_samples
+        return zero_diagonal(g_samples)
 
     def particle_to_soft_graph(self, z, eps, t):
         """
@@ -168,9 +137,7 @@ class DiBS:
         soft_graph = sigmoid(self.tau * (eps + self.alpha(t) * scores))
 
         # mask diagonal since it is explicitly not modeled
-        n_vars = soft_graph.shape[-1]
-        soft_graph = soft_graph.at[..., jnp.arange(n_vars), jnp.arange(n_vars)].set(0.0)
-        return soft_graph
+        return zero_diagonal(soft_graph)
 
 
     def particle_to_hard_graph(self, z, eps, t):
@@ -188,12 +155,10 @@ class DiBS:
         scores = jnp.einsum('...ik,...jk->...ij', z[..., 0], z[..., 1])
 
         # simply take hard limit of sigmoid in gumbel-softmax/concrete distribution
-        hard_graph = ((self.tau * (eps + self.alpha(t) * scores)) > 0.0).astype(jnp.float32)
+        hard_graph = ((eps + self.alpha(t) * scores) > 0.0).astype(jnp.float32)
 
         # mask diagonal since it is explicitly not modeled
-        n_vars = hard_graph.shape[-1]
-        hard_graph = hard_graph.at[..., jnp.arange(n_vars), jnp.arange(n_vars)].set(0.0)
-        return hard_graph
+        return zero_diagonal(hard_graph)
 
 
     """
@@ -216,8 +181,7 @@ class DiBS:
         probs = sigmoid(self.alpha(t) * scores)
 
         # mask diagonal since it is explicitly not modeled
-        probs = probs.at[..., jnp.arange(probs.shape[-1]), jnp.arange(probs.shape[-1])].set(0.0)
-        return probs
+        return zero_diagonal(probs)
 
 
     def edge_log_probs(self, z, t):
@@ -237,9 +201,7 @@ class DiBS:
 
         # mask diagonal since it is explicitly not modeled
         # NOTE: this is not technically log(p), but the way `edge_log_probs_` is used, this is correct
-        log_probs = log_probs.at[..., jnp.arange(log_probs.shape[-1]), jnp.arange(log_probs.shape[-1])].set(0.0)
-        log_probs_neg = log_probs_neg.at[..., jnp.arange(log_probs_neg.shape[-1]), jnp.arange(log_probs_neg.shape[-1])].set(0.0)
-        return log_probs, log_probs_neg
+        return zero_diagonal(log_probs), zero_diagonal(log_probs_neg)
 
 
 

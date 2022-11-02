@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax import random
 
 from dibs.graph_utils import mat_to_graph, graph_to_mat, mat_is_dag
+from dibs.utils.func import zero_diagonal
 
 
 class ErdosReniDAGDistribution:
@@ -24,8 +25,6 @@ class ErdosReniDAGDistribution:
     """
 
     def __init__(self, n_vars, n_edges_per_node=2):
-        super(ErdosReniDAGDistribution, self).__init__()
-
         self.n_vars = n_vars
         self.n_edges = n_edges_per_node * n_vars
         self.p = self.n_edges / ((self.n_vars * (self.n_vars - 1)) / 2)
@@ -125,8 +124,6 @@ class ScaleFreeDAGDistribution:
     """
 
     def __init__(self, n_vars, verbose=False, n_edges_per_node=2):
-        super(ScaleFreeDAGDistribution, self).__init__()
-
         self.n_vars = n_vars
         self.n_edges_per_node = n_edges_per_node
         self.verbose = verbose
@@ -212,7 +209,6 @@ class UniformDAGDistributionRejection:
     """
 
     def __init__(self, n_vars):
-        super(UniformDAGDistributionRejection, self).__init__()
         self.n_vars = n_vars 
 
     def sample_G(self, key, return_mat=False):
@@ -229,7 +225,7 @@ class UniformDAGDistributionRejection:
         while True:
             key, subk = random.split(key)
             mat = random.bernoulli(subk, p=0.5, shape=(self.n_vars, self.n_vars)).astype(jnp.int32)
-            mat = mat.at[..., jnp.arange(self.n_vars), jnp.arange(self.n_vars)].set(0)
+            mat = zero_diagonal(mat)
 
             if mat_is_dag(mat):
                 if return_mat:

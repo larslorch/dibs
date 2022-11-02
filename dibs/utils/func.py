@@ -114,3 +114,29 @@ def squared_norm_pytree(x, y):
     return squared_norm
 
 
+def zero_diagonal(g):
+    """
+    Returns the argument matrix with its diagonal set to zero.
+    """
+    d = g.shape[-1]
+    return g.at[..., jnp.arange(d), jnp.arange(d)].set(0)
+
+
+def _slogdet_jax(m, parents):
+    """
+    Log determinant of a submatrix. Made ``jax.jit``-compilable and ``jax.grad``-differentiable
+    by masking everything but the submatrix and adding a diagonal of ones everywhere else
+    to obtain the valid determinant
+
+    Args:
+        m (ndarray): matrix of shape ``[d, d]``
+        parents (ndarray): boolean indicator of parents of shape ``[d, ]``
+
+    Returns:
+        natural log of determinant of submatrix ``m`` indexed by ``parents`` on both dimensions
+    """
+
+    n_vars = parents.shape[0]
+    mask = jnp.einsum('...i,...j->...ij', parents, parents)
+    submat = mask * m + (1 - mask) * jnp.eye(n_vars)
+    return jnp.linalg.slogdet(submat)[1]
