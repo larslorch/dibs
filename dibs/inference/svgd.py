@@ -29,10 +29,12 @@ class MarginalDiBS(DiBS):
         x (ndarray): observations of shape ``[n_observations, n_vars]``
         interv_mask (ndarray, optional): binary matrix of shape ``[n_observations, n_vars]`` indicating
             whether a given variable was intervened upon in a given sample (intervention = 1, no intervention = 0)
-        inference_model: Bayes net inference model defining prior :math:`\\log p(G)`
-            and marginal likelihood :math:`\\log p(D | G)`` underlying the inferred posterior.
-            Object *has to implement two methods*:
-            ``log_graph_prior`` and ``observational_log_marginal_prob``.
+        graph_model: Model defining the prior :math:`\\log p(G)` underlying the inferred posterior.
+            Object *has to implement one method*: ``unnormalized_log_prob_soft``
+            Example: :class:`~dibs.models.ErdosReniDAGDistribution`
+        likelihood_model: Model defining the marginal likelihood :math:`\\log p(D | G)``
+            underlying the inferred posterior.
+            Object *has to implement one method*: ``interventional_log_marginal_prob``
             Example: :class:`~dibs.models.BGe`
         kernel: Class of kernel. *Has to implement the method* ``eval(u, v)``.
             Example: :class:`~dibs.kernel.AdditiveFrobeniusSEKernel`
@@ -57,7 +59,8 @@ class MarginalDiBS(DiBS):
 
     def __init__(self, *,
                  x,
-                 graph_model, likelihood_model,
+                 graph_model,
+                 likelihood_model,
                  interv_mask=None,
                  kernel=AdditiveFrobeniusSEKernel,
                  kernel_param=None,
@@ -389,10 +392,13 @@ class JointDiBS(DiBS):
         x (ndarray): observations of shape ``[n_observations, n_vars]``
         interv_mask (ndarray, optional): binary matrix of shape ``[n_observations, n_vars]`` indicating
             whether a given variable was intervened upon in a given sample (intervention = 1, no intervention = 0)
-        inference_model: Bayes net inference model defining prior :math:`\\log p(G)`
-            and joint likelihood :math:`\\log p(\\Theta, D | G) = \\log p(\\Theta | G) + \\log p(D | G, \\Theta``
-            underlying the inferred posterior. Object *has to implement two methods*:
-            ``log_graph_prior`` and ``observational_log_joint_prob``.
+        graph_model: Model defining the prior :math:`\\log p(G)` underlying the inferred posterior.
+            Object *has to implement one method*: ``unnormalized_log_prob_soft``
+            Example: :class:`~dibs.models.ErdosReniDAGDistribution`
+        likelihood_model: Model defining the joint likelihood
+            :math:`\\log p(\\Theta, D | G) = \\log p(\\Theta | G) + \\log p(D | G, \\Theta)``
+            underlying the inferred posterior.
+            Object *has to implement one method*: ``interventional_log_joint_prob``
             Example: :class:`~dibs.models.LinearGaussian`
         kernel: Class of kernel. *Has to implement the method* ``eval(u, v)``.
             Example: :class:`~dibs.kernel.JointAdditiveFrobeniusSEKernel`
@@ -418,7 +424,8 @@ class JointDiBS(DiBS):
 
     def __init__(self, *,
                  x,
-                 inference_model,
+                 graph_model,
+                 likelihood_model,
                  interv_mask=None,
                  kernel=JointAdditiveFrobeniusSEKernel,
                  kernel_param=None,

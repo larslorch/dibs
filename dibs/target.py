@@ -43,7 +43,7 @@ class Data(NamedTuple):
 def make_synthetic_bayes_net(*,
     key,
     n_vars,
-    graph_dist,
+    graph_model,
     generative_model,
     n_observations=100,
     n_ho_observations=100,
@@ -57,7 +57,7 @@ def make_synthetic_bayes_net(*,
     Args:
         key (ndarray): rng key
         n_vars (int): number of variables
-        graph_dist (Any): graph model object. For example: :class:`~dibs.models.ErdosReniDAGDistribution`
+        graph_model (Any): graph model object. For example: :class:`~dibs.models.ErdosReniDAGDistribution`
         generative_model (Any): BN model object for generating the observations. For example: :class:`~dibs.models.LinearGaussian`
         n_observations (int): number of observations generated for posterior inference
         n_ho_observations (int): number of held-out observations generated for evaluation
@@ -76,7 +76,7 @@ def make_synthetic_bayes_net(*,
 
     # generate ground truth observations
     key, subk = random.split(key)
-    g_gt = graph_dist.sample_G(subk)
+    g_gt = graph_model.sample_G(subk)
     g_gt_mat = jnp.array(graph_to_mat(g_gt))
 
     key, subk = random.split(key)
@@ -132,21 +132,21 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
         Object representing graph model. For example :class:`~dibs.models.ErdosReniDAGDistribution` or :class:`~dibs.models.ScaleFreeDAGDistribution`
     """
     if graph_prior_str == 'er':
-        graph_dist = ErdosReniDAGDistribution(
+        graph_model = ErdosReniDAGDistribution(
             n_vars=n_vars, 
             n_edges_per_node=edges_per_node)
 
     elif graph_prior_str == 'sf':
-        graph_dist = ScaleFreeDAGDistribution(
+        graph_model = ScaleFreeDAGDistribution(
             n_vars=n_vars,
             n_edges_per_node=edges_per_node)
 
     else:
         assert n_vars <= 5, "Naive uniform DAG sampling only possible up to 5 nodes"
-        graph_dist = UniformDAGDistributionRejection(
+        graph_model = UniformDAGDistributionRejection(
             n_vars=n_vars)
 
-    return graph_dist
+    return graph_model
 
 
 def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -177,25 +177,25 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     """
 
     # init models
-    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
         n_vars=n_vars, obs_noise=obs_noise,
         mean_edge=mean_edge, sig_edge=sig_edge,
         min_edge=min_edge)
 
-    likelihood_model = BGe(graph_dist=graph_dist)
+    likelihood_model = BGe(graph_model=graph_model)
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
     data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_dist=graph_dist,
+        graph_model=graph_model,
         generative_model=generative_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, graph_dist, likelihood_model
+    return data, graph_model, likelihood_model
 
 
 def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -221,7 +221,7 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     """
 
     # init models
-    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
         n_vars=n_vars, obs_noise=obs_noise,
@@ -237,12 +237,12 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     key, subk = random.split(key)
     data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_dist=graph_dist,
+        graph_model=graph_model,
         generative_model=generative_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, graph_dist, likelihood_model
+    return data, graph_model, likelihood_model
 
 
 def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
@@ -271,7 +271,7 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     """
 
     # init models
-    graph_dist = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
+    graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = DenseNonlinearGaussian(
         n_vars=n_vars, hidden_layers=hidden_layers,
@@ -285,9 +285,9 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     key, subk = random.split(key)
     data = make_synthetic_bayes_net(
         key=subk, n_vars=n_vars,
-        graph_dist=graph_dist,
+        graph_model=graph_model,
         generative_model=generative_model,
         n_observations=n_observations,
         n_ho_observations=n_ho_observations)
 
-    return data, graph_dist, likelihood_model
+    return data, graph_model, likelihood_model
