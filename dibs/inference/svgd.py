@@ -84,7 +84,7 @@ class MarginalDiBS(DiBS):
             interv_mask = jnp.zeros_like(x, dtype=jnp.int32)
 
         # init DiBS superclass methods
-        super(MarginalDiBS, self).__init__(
+        super().__init__(
             x=x,
             interv_mask=interv_mask,
             log_graph_prior=inference_model.log_graph_prior,
@@ -444,7 +444,7 @@ class JointDiBS(DiBS):
             interv_mask = jnp.zeros_like(x, dtype=jnp.int32)
 
         # init DiBS superclass methods
-        super(JointDiBS, self).__init__(
+        super().__init__(
             x=x,
             interv_mask=interv_mask,
             log_graph_prior=inference_model.log_graph_prior,
