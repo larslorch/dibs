@@ -620,7 +620,7 @@ class DiBS:
         single_soft_g = self.edge_probs(single_z, t)
 
         # [1, ]
-        return self.log_graph_prior(single_soft_g)
+        return self.log_graph_prior(soft_g=single_soft_g)
 
 
     def eltwise_grad_latent_prior(self, zs, subkeys, t):
