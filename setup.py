@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 setup(
     name='dibs-lib',
-    version='1.3.1',
+    version='1.3.2',
     description='DiBS: Differentiable Bayesian Structure Learning',
     author='Lars Lorch',
     author_email='lars.lorch@inf.ethz.ch',
@@ -13,8 +13,8 @@ setup(
     ],
     packages=find_packages(),
     install_requires=[
-        'jax>=0.2.25',
-        'jaxlib>=0.1.59',
+        'jax>=0.3.17',
+        'jaxlib>=0.3.14',
         'numpy',
         'pandas',
         'igraph',
