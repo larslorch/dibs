@@ -43,10 +43,10 @@ key = random.PRNGKey(0)
 
 # simulate some data
 key, subk = random.split(key)
-data, model = make_nonlinear_gaussian_model(key=subk, n_vars=20)
+data, graph_model, likelihood_model = make_nonlinear_gaussian_model(key=subk, n_vars=20)
 
 # sample 10 DAG and parameter particles from the joint posterior
-dibs = JointDiBS(x=data.x, interv_mask=None, inference_model=model)
+dibs = JointDiBS(x=data.x, interv_mask=None, graph_model=graph_model, likelihood_model=likelihood_model)
 key, subk = random.split(key)
 gs, thetas = dibs.sample(key=subk, n_particles=10, steps=1000)
 ```

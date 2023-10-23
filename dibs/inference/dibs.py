@@ -26,7 +26,7 @@ class DiBS:
         log_joint_prob (callable):
             function implementing joint likelihood :math:`\\log p(\Theta, D | G)`
             of parameters and observations given the discrete graph adjacency matrix
-            For example: :func:`dibs.models.LinearGaussian.observational_log_joint_prob`.
+            For example: :func:`dibs.models.LinearGaussian.interventional_log_joint_prob`.
             When inferring the marginal posterior :math:`p(G | D)` via a closed-form
             marginal likelihood :math:`\\log p(D | G)`, the same function signature has to be
             satisfied (simply ignoring :math:`\\Theta`)

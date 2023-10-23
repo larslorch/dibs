@@ -90,10 +90,7 @@ class DenseNonlinearGaussian:
     Refer to http://proceedings.mlr.press/v108/zheng20a/zheng20a.pdf
 
     Args:
-        graph_dist: Graph model defining prior :math:`\\log p(G)`. Object *has to implement the method*:
-            ``unnormalized_log_prob_soft``.
-            For example: :class:`~dibs.graph.ErdosReniDAGDistribution`
-            or :class:`~dibs.graph.ScaleFreeDAGDistribution`
+        n_vars (int): number of variables (nodes in the graph)
         hidden_layers (list): list of integers specifying the number of layers as well as their widths.
             For example: ``[8, 8]`` would correspond to 2 hidden layers with 8 neurons
         obs_noise (float, optional): variance of additive observation noise at nodes
@@ -102,9 +99,8 @@ class DenseNonlinearGaussian:
             Choices: ``sigmoid``, ``tanh``, ``relu``, ``leakyrelu``
 
     """
-    def __init__(self, *, graph_dist, hidden_layers, obs_noise=0.1, sig_param=1.0, activation='relu', bias=True):
-        self.graph_dist = graph_dist
-        self.n_vars = graph_dist.n_vars
+    def __init__(self, *, n_vars, hidden_layers, obs_noise=0.1, sig_param=1.0, activation='relu', bias=True):
+        self.n_vars = n_vars
         self.obs_noise = obs_noise
         self.sig_param = sig_param
         self.hidden_layers = hidden_layers
@@ -308,19 +304,6 @@ class DenseNonlinearGaussian:
     """
     Distributions used by DiBS for inference:  prior and joint likelihood 
     """
-
-    def log_graph_prior(self, g_prob):
-        """ Computes graph prior :math:`\\log p(G)` given matrix of edge probabilities.
-        This function simply binds the function of the provided ``self.graph_dist``.
-
-        Arguments:
-            g_prob (ndarray): edge probabilities in G of shape ``[n_vars, n_vars]``
-
-        Returns:
-            log prob
-        """
-        return self.graph_dist.unnormalized_log_prob_soft(soft_g=g_prob)
-
 
     def interventional_log_joint_prob(self, g, theta, x, interv_targets, rng):
         """Computes interventional joint likelihood :math:`\\log p(\\Theta, D | G)``
