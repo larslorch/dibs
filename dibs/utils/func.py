@@ -117,6 +117,9 @@ def squared_norm_pytree(x, y):
 def zero_diagonal(g):
     """
     Returns the argument matrix with its diagonal set to zero.
+
+    Args:
+        g (ndarray): matrix of shape ``[..., d, d]``
     """
     d = g.shape[-1]
     return g.at[..., jnp.arange(d), jnp.arange(d)].set(0)

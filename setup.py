@@ -17,7 +17,7 @@ setup(
         'jaxlib>=0.1.59',
         'numpy',
         'pandas',
-        'python-igraph',
+        'igraph',
         'imageio',
         'jupyter',
         'tqdm',
