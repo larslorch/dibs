@@ -1,9 +1,9 @@
-imageio
 jax>=0.3.17
 jaxlib>=0.3.14
-jupyter
-matplotlib
 numpy
 igraph
-sklearn
+imageio
+jupyter
 tqdm
+matplotlib
+scikit-learn

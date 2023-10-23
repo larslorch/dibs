@@ -16,11 +16,11 @@ setup(
         'jax>=0.3.17',
         'jaxlib>=0.3.14',
         'numpy',
-        'pandas',
         'igraph',
         'imageio',
         'jupyter',
         'tqdm',
         'matplotlib',
+        'scikit-learn',
     ]
 )
