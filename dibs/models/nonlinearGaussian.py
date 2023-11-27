@@ -14,28 +14,31 @@ from dibs.graph_utils import graph_to_mat
 from dibs.utils.tree import tree_shapes
 
 
-def DenseNoBias(out_dim, W_init=normal()):
+def dense_no_bias(out_dim, w_init=None):
     """Layer constructor function for a dense (fully-connected) layer _without_ bias"""
+
+    if w_init is None:
+        w_init = normal()
 
     def init_fun(rng, input_shape):
         output_shape = input_shape[:-1] + (out_dim,)
-        W = W_init(rng, (input_shape[-1], out_dim))
-        return output_shape, (W, )
+        w = w_init(rng, (input_shape[-1], out_dim))
+        return output_shape, (w, )
 
     def apply_fun(params, inputs, **kwargs):
-        W, = params
-        return jnp.dot(inputs, W)
+        w, = params
+        return jnp.dot(inputs, w)
 
     return init_fun, apply_fun
 
 
-def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='relu'):
+def make_dense_net(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='relu'):
     """
     Generates functions defining a fully-connected NN
     with Gaussian initialized parameters
 
     Args:
-        hidden_layers (list): list of ints specifying the dimensions of the hidden sizes
+        hidden_layers (tuple): list of ints specifying the dimensions of the hidden sizes
         sig_weight: std dev of weight initialization
         sig_bias: std dev of weight initialization
         bias: bias of linear layer
@@ -70,10 +73,10 @@ def makeDenseNet(*, hidden_layers, sig_weight, sig_bias, bias=True, activation='
     else:
         for dim in hidden_layers:
             modules += [
-                DenseNoBias(dim, W_init=normal(stddev=sig_weight)),
+                dense_no_bias(dim, w_init=normal(stddev=sig_weight)),
                 f_activation
             ]
-        modules += [DenseNoBias(1, W_init=normal(stddev=sig_weight))]
+        modules += [dense_no_bias(1, w_init=normal(stddev=sig_weight))]
 
     return stax.serial(*modules)
 
@@ -91,7 +94,7 @@ class DenseNonlinearGaussian:
 
     Args:
         n_vars (int): number of variables (nodes in the graph)
-        hidden_layers (list): list of integers specifying the number of layers as well as their widths.
+        hidden_layers (tuple): list of integers specifying the number of layers as well as their widths.
             For example: ``[8, 8]`` would correspond to 2 hidden layers with 8 neurons
         obs_noise (float, optional): variance of additive observation noise at nodes
         sig_param (float, optional): std dev of Gaussian parameter prior
@@ -110,7 +113,7 @@ class DenseNonlinearGaussian:
         self.no_interv_targets = jnp.zeros(self.n_vars).astype(bool)
 
         # init single neural net function for one variable with jax stax
-        self.nn_init_random_params, nn_forward = makeDenseNet(
+        self.nn_init_random_params, nn_forward = make_dense_net(
             hidden_layers=self.hidden_layers,
             sig_weight=self.sig_param,
             sig_bias=self.sig_param,

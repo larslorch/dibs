@@ -149,7 +149,8 @@ def make_graph_model(*, n_vars, graph_prior_str, edges_per_node=2):
     return graph_model
 
 
-def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf', 
+def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf',
+    bge_mean_obs=None, bge_alpha_mu=None, bge_alpha_lambd=None,
     obs_noise=0.1, mean_edge=0.0, sig_edge=1.0, min_edge=0.5, n_observations=100,
     n_ho_observations=100):
     """
@@ -166,11 +167,14 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
         n_observations (int): number of iid observations of variables
         n_ho_observations (int): number of iid held-out observations of variables
         graph_prior_str (str): graph prior (``er`` or ``sf``)
+        bge_mean_obs (float): BGe score prior mean parameter of Normal
+        bge_alpha_mu (float): BGe score prior precision parameter of Normal
+        bge_alpha_lambd (float): BGe score prior effective sample size (degrees of freedom parameter of Wishart)
         obs_noise (float): observation noise
         mean_edge (float): edge weight mean
         sig_edge (float): edge weight stddev
         min_edge (float): min edge weight enforced by constant shift of sampled parameter
-    
+
     Returns:
         tuple(:class:`~dibs.models.BGe`, :class:`~dibs.target.Data`):
         BGe inference model and observations from a linear Gaussian generative process
@@ -180,20 +184,30 @@ def make_linear_gaussian_equivalent_model(*, key, n_vars=20, graph_prior_str='sf
     graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        n_vars=n_vars, obs_noise=obs_noise,
-        mean_edge=mean_edge, sig_edge=sig_edge,
-        min_edge=min_edge)
+        n_vars=n_vars,
+        obs_noise=obs_noise,
+        mean_edge=mean_edge,
+        sig_edge=sig_edge,
+        min_edge=min_edge,
+    )
 
-    likelihood_model = BGe(graph_model=graph_model)
+    likelihood_model = BGe(
+        n_vars=n_vars,
+        mean_obs=bge_mean_obs,
+        alpha_mu=bge_alpha_mu,
+        alpha_lambd=bge_alpha_lambd,
+    )
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
     data = make_synthetic_bayes_net(
-        key=subk, n_vars=n_vars,
+        key=subk,
+        n_vars=n_vars,
         graph_model=graph_model,
         generative_model=generative_model,
         n_observations=n_observations,
-        n_ho_observations=n_ho_observations)
+        n_ho_observations=n_ho_observations,
+    )
 
     return data, graph_model, likelihood_model
 
@@ -224,29 +238,37 @@ def make_linear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = LinearGaussian(
-        n_vars=n_vars, obs_noise=obs_noise,
-        mean_edge=mean_edge, sig_edge=sig_edge,
-        min_edge=min_edge)
+        n_vars=n_vars,
+        obs_noise=obs_noise,
+        mean_edge=mean_edge,
+        sig_edge=sig_edge,
+        min_edge=min_edge,
+    )
 
     likelihood_model = LinearGaussian(
-        n_vars=n_vars, obs_noise=obs_noise,
-        mean_edge=mean_edge, sig_edge=sig_edge,
-        min_edge=min_edge)
+        n_vars=n_vars,
+        obs_noise=obs_noise,
+        mean_edge=mean_edge,
+        sig_edge=sig_edge,
+        min_edge=min_edge,
+    )
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
     data = make_synthetic_bayes_net(
-        key=subk, n_vars=n_vars,
+        key=subk,
+        n_vars=n_vars,
         graph_model=graph_model,
         generative_model=generative_model,
         n_observations=n_observations,
-        n_ho_observations=n_ho_observations)
+        n_ho_observations=n_ho_observations,
+    )
 
     return data, graph_model, likelihood_model
 
 
 def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf', 
-    obs_noise=0.1, sig_param=1.0, hidden_layers=[5,], n_observations=100,
+    obs_noise=0.1, sig_param=1.0, hidden_layers=(5,), n_observations=100,
     n_ho_observations=100):
     """
     Samples a synthetic nonlinear Gaussian BN instance 
@@ -262,7 +284,7 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
         obs_noise (float): observation noise
         sig_param (float): stddev of the BN parameters,
             i.e. here the neural net weights and biases
-        hidden_layers (list): list of ints specifying the hidden layer (sizes)
+        hidden_layers (tuple): list of ints specifying the hidden layer (sizes)
             of the neural nets parameterizatin the local condtitionals
     
     Returns:
@@ -274,12 +296,18 @@ def make_nonlinear_gaussian_model(*, key, n_vars=20, graph_prior_str='sf',
     graph_model = make_graph_model(n_vars=n_vars, graph_prior_str=graph_prior_str)
 
     generative_model = DenseNonlinearGaussian(
-        n_vars=n_vars, hidden_layers=hidden_layers,
-        obs_noise=obs_noise, sig_param=sig_param)
+        n_vars=n_vars,
+        hidden_layers=hidden_layers,
+        obs_noise=obs_noise,
+        sig_param=sig_param,
+    )
 
     likelihood_model = DenseNonlinearGaussian(
-        n_vars=n_vars, hidden_layers=hidden_layers,
-        obs_noise=obs_noise, sig_param=sig_param)
+        n_vars=n_vars,
+        hidden_layers=hidden_layers,
+        obs_noise=obs_noise,
+        sig_param=sig_param,
+    )
 
     # sample synthetic BN and observations
     key, subk = random.split(key)
