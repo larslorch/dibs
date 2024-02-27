@@ -7,6 +7,7 @@
 | [**Branches**](#branches-and-custom-installation)
 | [**Reference**](#reference)
 
+[![Downloads](https://static.pepy.tech/badge/dibs-lib)](https://pypi.org/project/dibs-lib/)
 [![Documentation Status](https://readthedocs.org/projects/differentiable-bayesian-structure-learning/badge/?version=latest)](https://differentiable-bayesian-structure-learning.readthedocs.io/en/latest/?badge=latest)
 [![PyPi](https://img.shields.io/pypi/v/dibs-lib?logo=PyPI)](https://pypi.org/project/dibs-lib/)
 
